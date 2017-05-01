@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# Active SSL Compare
+# Written by Angel Nieves - April 30 2017
+# Compares resulting SSL certificate between curl and openssl
+
+# Exit Codes
+# 0 = Certificates match
+# 1 = Certificates don't match
+# 2 = Invalid arguments supplied
+# 3 = Domain does not resolve
+
+DOMAIN='';
+PORT='';
+RESULTONLY='';
+
+RESULT='';
+
+# Return whether or not the certificates match
+function Main()
+{
+	# Curl
+	curlErr=$(curl -svI "https://$DOMAIN:$PORT" 2>&1 >/dev/null);
+	startDate=$(echo "$curlErr" | awk -F': ' '/start date/ {print $2}');
+	expDate=$(echo "$curlErr" | awk -F': ' '/expire date/ {print $2}');
+	commonN=$(echo "$curlErr" | awk -F': ' '/common name/ {print $2}');
+	rawgroup=$(echo "$curlErr" | awk -F'O=' '/issuer/ {print $2}' | awk -F ',L=' '{print $1}');
+	parsegroup=$(echo "$rawgroup" | sed 's/"//g');
+	
+	echo -e "curl Results";
+	echo -e " Common Name: $commonN";
+	echo -e " Organization: $parsegroup";
+	if [[ $rawgroup != $parsegroup ]]; then
+		echo -e "  Raw: $rawgroup";
+	fi
+	echo -e " Start: $startDate\n End: $expDate";
+
+	
+	# OpenSSL
+	opensslOut=$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null);
+	_startDate=$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null | openssl x509 -noout -dates | awk -F'=' '/notBefore/ {print $2}');
+	_expDate=$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null | openssl x509 -noout -dates | awk -F'=' '/notAfter/ {print $2}');
+	_commonN=$(echo "$opensslOut" | awk -F'CN=' '/subject/ {print $2}');
+	_group=$(echo "$opensslOut" | awk -F'O=' '/issuer/ {print $2}' | awk -F'/' '{print $1}');
+	
+	echo -e "\nopenssl Results\n Common Name: $_commonN\n Organization: $_group\n Start: $_startDate\n End: $_expDate";
+	
+	# Return comparison
+	echo -e "\nResults";
+	
+        if [[ $commonN == $_commonN ]]; then
+                echo " Common Name: True/Good";
+        else
+                echo " Common Name: False/Bad";
+        fi
+	if [[ $parsegroup == $_group ]]; then
+                echo " Organization: True/Good";
+        else
+                echo " Organization: False/Bad";
+	fi
+	if [[ $(echo $startDate | sed 's/ //g') == $(echo $_startDate | sed 's/ //g') ]]; then
+		echo " Start Date: True/Good";
+	else
+		echo " Start Date: False/Bad";
+	fi
+	if [[ $(echo $expDate | sed 's/ //g') == $(echo $_expDate | sed 's/ //g') ]]; then
+                echo " Expiry Date: True/Good";
+        else
+                echo " Expiry Date: False/Bad";
+	fi
+
+
+	if [[ $commonN != $_commonN || $parsegroup != $_group || $(echo $startDate | sed 's/ //g') != $(echo $_startDate | sed 's/ //g') || $(echo $expDate | sed 's/ //g') != $(echo $_expDate | sed 's/ //g') ]]; then
+		# Failure
+		RESULT='1';
+	else
+		# Success
+		RESULT='0';
+	fi
+	echo "Final Result: $RESULT";
+	
+	return $RESULT;
+}
+
+# Main code execution
+while [[ $# -gt 0 ]]
+do
+        arg=$1;
+        case $arg in
+                -d|--domain)
+			_arg=$(echo "$2" | cut -c'1-2');
+			if [[ $_arg != '--' && $_arg != '-' && -n $_arg ]]; then
+				DOMAIN=$2;
+			else
+				# Program failed
+				exit 2;
+			fi
+                        shift
+                        ;;
+		-p|--port)
+                        _arg=$(echo "$2" | cut -c'1-2');
+                        if [[ $_arg != '--' && $_arg != '-' && -n $_arg ]]; then
+                                PORT=$2;
+                        else
+				# Program failed
+                                exit 2;
+                        fi
+			shift
+			;;
+		--resultonly)
+			RESULTONLY='1';
+			shift
+			;;
+                *)
+			# Unknown argument
+                        shift
+                        ;;
+        esac
+done
+
+if [[ -n $DOMAIN || -n $PORT ]]; then
+	# Make sure domain resolves.
+	if [[ -z $(dig "$DOMAIN" +short) ]]; then
+		exit 3;
+	fi
+	
+	if [[ $RESULTONLY == '1' ]]; then
+		Main > /dev/null;
+		exitcode=$?;
+		echo $exitcode;
+		exit $exitcode;
+	else
+		Main;
+	fi
+fi
