@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Active SSL Compare
+# Active SSL Compare 0.2
 # Written by Angel Nieves - April 30 2017
 # Compares resulting SSL certificate between curl and openssl
 
@@ -16,16 +16,27 @@ RESULTONLY='';
 
 RESULT='';
 
+function ParseDate()
+{
+	if [[ -n $(echo "$1" | grep -E '^.{3}\s{2}[0-9]\s') ]]; then # Mon  0 
+		echo $1 | awk '{$2 = "0"$2; print $0}';
+	elif [[ -n $(echo "$1" | grep -E '^.{3}\s[0-9]{2}\s') ]]; then # Mon 00 
+		echo $1;
+	fi
+}
+
 # Return whether or not the certificates match
 function Main()
 {
 	# Curl
 	curlErr=$(curl -svI "https://$DOMAIN:$PORT" 2>&1 >/dev/null);
-	startDate=$(echo "$curlErr" | awk -F': ' '/start date/ {print $2}');
-	expDate=$(echo "$curlErr" | awk -F': ' '/expire date/ {print $2}');
+	startDate=$(ParseDate "$(echo "$curlErr" | awk -F': ' '/start date/ {print $2}')");
+	#startDate=$(echo "$curlErr" | awk -F': ' '/start date/ {print $2}');
+	expDate=$(ParseDate "$(echo "$curlErr" | awk -F': ' '/expire date/ {print $2}')");
+	#expDate=$(echo "$curlErr" | awk -F': ' '/expire date/ {print $2}');
 	commonN=$(echo "$curlErr" | awk -F': ' '/common name/ {print $2}');
-	rawgroup=$(echo "$curlErr" | awk -F'O=' '/issuer/ {print $2}' | awk -F ',L=' '{print $1}');
-	parsegroup=$(echo "$rawgroup" | sed 's/"//g');
+	rawgroup=$(echo "$curlErr" | awk -F',O=' '/issuer:/ {print $2}' | awk -F',.=' '{print $1}');
+	parsegroup=$(echo "$rawgroup" | sed 's/"//g'); # Used to remove " characters from cPanel, Inc.
 	
 	echo -e "curl Results";
 	echo -e " Common Name: $commonN";
@@ -38,8 +49,8 @@ function Main()
 	
 	# OpenSSL
 	opensslOut=$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null);
-	_startDate=$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null | openssl x509 -noout -dates | awk -F'=' '/notBefore/ {print $2}');
-	_expDate=$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null | openssl x509 -noout -dates | awk -F'=' '/notAfter/ {print $2}');
+	_startDate=$(ParseDate "$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null | openssl x509 -noout -dates | awk -F'=' '/notBefore/ {print $2}')");
+	_expDate=$(ParseDate "$(echo | openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null | openssl x509 -noout -dates | awk -F'=' '/notAfter/ {print $2}')");
 	_commonN=$(echo "$opensslOut" | awk -F'CN=' '/subject/ {print $2}');
 	_group=$(echo "$opensslOut" | awk -F'O=' '/issuer/ {print $2}' | awk -F'/' '{print $1}');
 	
