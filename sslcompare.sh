@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SSL Checker 0.5
+# SSL Checker 0.51
 # Written by Angel Nieves
 # Compares resulting SSL certificate between non-SNI & SNI
 
@@ -11,7 +11,7 @@
 # 3 - Invalid arguments supplied
 # 4 - Domain does not resolve
 # 5 - Connection timed out
-# 6 - Connection refused
+# 6 - Connection refused or general failure
 
 DOMAIN='';
 PORT='';
@@ -53,18 +53,21 @@ function CheckExpired()
 function Main()
 {
 	# Establish OpenSSL connections
-	local openssl_nosni=$(echo | timeout "$TIMEOUT" openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); local opensslexit=$?;
-	local openssl_sni=$(echo | timeout "$TIMEOUT" openssl s_client -connect "$DOMAIN:$PORT" -servername "$DOMAIN" 2> /dev/null); local _opensslexit=$?;
+	# Setting these variables to local causes the exit code to return 0, they must remain global
+	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); opensslexit=$?;
+	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" -servername "$DOMAIN" 2> /dev/null); _opensslexit=$?;
+	
+	echo -e "$opensslexit\n$_opensslexit" | less;
 	
 	## Abort if connection was made to a URL that didn't load
 	if [ $opensslexit == '124' -o $_opensslexit == '124' ]; then
-		echo "Connection to https://$DOMAIN:$PORT timed out!";
+		echo "Connection to $DOMAIN:$PORT timed out!";
 		return 4;
 	elif [ $opensslexit == '1' -o $_opensslexit == '1' ]; then
-		echo "Connection to https://$DOMAIN:$PORT was refused!";
+		echo "Connection to $DOMAIN:$PORT was refused or failed!";
 		return 5;
 	fi
-	# End cURL/OpenSSL connections
+	# End OpenSSL connections
 	
 	# OpenSSL variable dump
 	local nosni_cn=$(echo "$openssl_nosni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
@@ -82,7 +85,7 @@ function Main()
 	local sni_fingerprint=$(echo "$openssl_sni" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
 	# End variable dump
 	
-	#Output cURL and OpenSSL results
+	#Output OpenSSL results
 	echo -e "\e[2mOpenSSL Results\e[0m";
 	echo "Common Name: $nosni_cn";
 	echo "Organization: $nosni_issuer";
@@ -91,7 +94,7 @@ function Main()
 	echo "Common Name: $sni_cn";
 	echo "Organization: $sni_issuer";
 	echo -e "Expired: $(CodeToBool $sni_expired 1)\n Start: $sni_startdate\n End: $sni_enddate";
-	#End cURL and OpenSSL results
+	#End OpenSSL results
 	
 	# Compare separate OpenSSL requests
 	local crtexpired=$(test $EXPIRED == '1' -a $nosni_expired == '0' -o $EXPIRED == '1' -a $sni_expired == '0'; echo $?);
