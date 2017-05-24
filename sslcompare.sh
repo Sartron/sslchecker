@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# SSL Checker 0.4
+# SSL Checker 0.5
 # Written by Angel Nieves
-# Compares resulting SSL certificate between cURL and OpenSSL
+# Compares resulting SSL certificate between non-SNI & SNI
 
 # Exit Codes
-# 0 = Certificates match
-# 1 = Certificates don't match
-# 2 = Certificate(s) expired
-# 3 = Invalid arguments supplied
-# 4 = Domain does not resolve
-# 5 = Connection timed out
-# 6 = Connection refused
+# 0 - Certificates match
+# 1 - Certificates don't match
+# 2 - Certificate(s) expired
+# 3 - Invalid arguments supplied
+# 4 - Domain does not resolve
+# 5 - Connection timed out
+# 6 - Connection refused
 
 DOMAIN='';
 PORT='';
@@ -23,8 +23,8 @@ RESULT='';
 TIMEOUT='10';
 
 # Converts exit code into boolean
-# $1 = Exit Code
-# $2 = Reverse Color (boolean of 1 or 0)
+# $1 - Exit Code
+# $2 - Reverse Color (boolean of 1 or 0)
 function CodeToBool()
 {
 	if [ $1 == '0' -a $2 == '0' ]; then
@@ -38,93 +38,77 @@ function CodeToBool()
 	fi
 }
 
-# Add 0 to date to ensure it may be compared
-# $1 = Date input
-function ParseDate()
-{
-	if [[ -n $(echo "$1" | grep -E '^.{3}\s{2}[0-9]\s') ]]; then # Mon  0 
-		echo $1 | awk '{$2 = "0"$2; print $0}';
-	elif [[ -n $(echo "$1" | grep -E '^.{3}\s[0-9]{2}\s') ]]; then # Mon 00 
-		echo $1;
-	fi
-}
-
 # Return if date has been passed
-# $1 = Expiration date in 'date' format
+# $1 - Expiration date in 'date' format
 function CheckExpired()
 {
-	curdateNix=$(date +%s);
-	expdateNix=$(date -d "$1" +%s);
+	local curdatenix=$(date +%s);
+	local expdatenix=$(date -d "$1" +%s);
 	
-	test $curdateNix -ge $expdateNix;
+	test $curdatenix -ge $expdatenix;
 	return $?;
 }
 
 # Return whether or not the certificates match
 function Main()
 {
-	# Establish cURL and OpenSSL connections
-	curlErr=$(curl -svI "https://$DOMAIN:$PORT" --connect-timeout "$TIMEOUT" 2>&1 > /dev/null); curlCode=$?;
-	opensslOut=$(echo | timeout "$TIMEOUT" openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); opensslCode=$?;
+	# Establish OpenSSL connections
+	local openssl_nosni=$(echo | timeout "$TIMEOUT" openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); local opensslexit=$?;
+	local openssl_sni=$(echo | timeout "$TIMEOUT" openssl s_client -connect "$DOMAIN:$PORT" -servername "$DOMAIN" 2> /dev/null); local _opensslexit=$?;
 	
 	## Abort if connection was made to a URL that didn't load
-	if [ $curlCode == '28' -o $opensslCode == '124' ]; then
+	if [ $opensslexit == '124' -o $_opensslexit == '124' ]; then
 		echo "Connection to https://$DOMAIN:$PORT timed out!";
 		return 4;
-	elif [ $curlCode == '7' -o $opensslCode == '1' ]; then
+	elif [ $opensslexit == '1' -o $_opensslexit == '1' ]; then
 		echo "Connection to https://$DOMAIN:$PORT was refused!";
 		return 5;
 	fi
 	# End cURL/OpenSSL connections
 	
-	# cURL and OpenSSL variable dump
-	startDate=$(ParseDate "$(echo "$curlErr" | awk -F': ' '/start date/ {print $2}')");
-	expDate=$(ParseDate "$(echo "$curlErr" | awk -F': ' '/expire date/ {print $2}')");
-	commonN=$(echo "$curlErr" | awk -F': ' '/common name/ {print $2}');
-	rawgroup=$(echo "$curlErr" | awk -F',O=' '/issuer:/ {print $2}' | awk -F',.=' '{print $1}');
-	parsegroup=$(echo "$rawgroup" | sed 's/"//g'); # Used to remove " characters from "cPanel, Inc."
-	expired=$(CheckExpired "$expDate"; echo $?);
-	_startDate=$(ParseDate "$(echo "$opensslOut" | openssl x509 -noout -dates | awk -F'=' '/notBefore/ {print $2}')");
-	_expDate=$(ParseDate "$(echo "$opensslOut" | openssl x509 -noout -dates | awk -F'=' '/notAfter/ {print $2}')");
-	_commonN=$(echo "$opensslOut" | awk -F'CN=' '/subject/ {print $2}');
-	_group=$(echo "$opensslOut" | awk -F'O=' '/issuer/ {print $2}' | awk -F'/' '{print $1}');
-	_expired=$(CheckExpired "$_expDate"; echo $?);
+	# OpenSSL variable dump
+	local nosni_cn=$(echo "$openssl_nosni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
+	local nosni_issuer=$(echo "$openssl_nosni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/CN=' '{print $1}');
+	local nosni_startdate=$(date -d "$(echo "$openssl_nosni" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
+	local nosni_enddate=$(date -d "$(echo "$openssl_nosni" | openssl x509 -noout -enddate | cut -d'=' -f2)" +'%b %d %G %r %Z');
+	local nosni_expired=$(CheckExpired "$nosni_enddate"; echo $?);
+	local nosni_fingerprint=$(echo "$openssl_nosni" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
+	
+	local sni_cn=$(echo "$openssl_sni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
+	local sni_issuer=$(echo "$openssl_sni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/CN=' '{print $1}');
+	local sni_startdate=$(date -d "$(echo "$openssl_sni" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
+	local sni_enddate=$(date -d "$(echo "$openssl_sni" | openssl x509 -noout -enddate | cut -d'=' -f2)" +'%b %d %G %r %Z');
+	local sni_expired=$(CheckExpired "$sni_enddate"; echo $?);
+	local sni_fingerprint=$(echo "$openssl_sni" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
 	# End variable dump
 	
 	#Output cURL and OpenSSL results
-	echo -e "\e[2mcURL Results\e[0m";
-	echo "Common Name: $commonN";
-	echo "Organization: $parsegroup";
-	echo -e "Expired: $(CodeToBool $expired 1)\n Start: $startDate\n End: $expDate";
-	echo -e "\n\e[2mOpenSSL Results\e[0m";
-	echo "Common Name: $_commonN";
-	echo "Organization: $_group";
-	echo -e "Expired: $(CodeToBool $_expired 1)\n Start: $_startDate\n End: $_expDate";
+	echo -e "\e[2mOpenSSL Results\e[0m";
+	echo "Common Name: $nosni_cn";
+	echo "Organization: $nosni_issuer";
+	echo -e "Expired: $(CodeToBool $nosni_expired 1)\n Start: $nosni_startdate\n End: $nosni_enddate";
+	echo -e "\n\e[2mOpenSSL with SNI Results\e[0m";
+	echo "Common Name: $sni_cn";
+	echo "Organization: $sni_issuer";
+	echo -e "Expired: $(CodeToBool $sni_expired 1)\n Start: $sni_startdate\n End: $sni_enddate";
 	#End cURL and OpenSSL results
 	
-	# Compare between cURL and OpenSSL output
-	mismatch=$(test $commonN != $_commonN -o "$parsegroup" != "$_group" -o "$startDate" != "$_startDate" -o "$expDate" != "$_expDate"; echo $?);
-	__expired=$(test $EXPIRED == '1' -a $expired == '0' -o $EXPIRED == '1' -a $_expired == '0'; echo $?);
+	# Compare separate OpenSSL requests
+	local crtexpired=$(test $EXPIRED == '1' -a $nosni_expired == '0' -o $EXPIRED == '1' -a $sni_expired == '0'; echo $?);
 	
-	printf "\n\e[2mComparison Results\e[0m: ";
-	if [ $mismatch == '0' ]; then
+	printf "\n\e[2mFingerprint Match\e[0m: ";
+	if [ $nosni_fingerprint != $sni_fingerprint ]; then
 		# Failure
-		echo 'Different';
+		echo -e '\e[31mFail\e[0m';
 		RESULT='1';
 	else
 		# Success
-		echo -e '\e[32mSame\e[0m';
+		echo -e '\e[32mPass\e[0m';
 		RESULT='0';
 	fi
-	
-	echo "Common Name: $(CodeToBool $(test $commonN == $_commonN; echo $?) 0)";
-	echo "Organization: $(CodeToBool $(test "$parsegroup" == "$_group"; echo $?) 0)";
-	echo "Expired: $(CodeToBool $(test $expired == $_expired; echo $?) 0)";
-	echo " Start: $(CodeToBool $(test "$startDate" == "$_startDate"; echo $?) 0)";
-	echo " End: $(CodeToBool $(test "$expDate" == "$_expDate"; echo $?) 0)";
 	# End comparison
 	
-	if [ $__expired == '0' ]; then
+	if [ $crtexpired == '0' ]; then
 		RESULT='2';
 	fi
 	return $RESULT;
