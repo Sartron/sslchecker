@@ -57,8 +57,6 @@ function Main()
 	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); opensslexit=$?;
 	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" -servername "$DOMAIN" 2> /dev/null); _opensslexit=$?;
 	
-	echo -e "$opensslexit\n$_opensslexit" | less;
-	
 	## Abort if connection was made to a URL that didn't load
 	if [ $opensslexit == '124' -o $_opensslexit == '124' ]; then
 		echo "Connection to $DOMAIN:$PORT timed out!";
