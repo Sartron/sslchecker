@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# SSL Checker 0.51
-# Written by Angel Nieves
+# SSL Checker 0.52
+# Written by Angel N.
 # Compares resulting SSL certificate between non-SNI & SNI
 
 # Exit Codes
@@ -13,18 +13,27 @@
 # 5 - Connection timed out
 # 6 - Connection refused or general failure
 
+# Launch Options
 DOMAIN='';
 PORT='';
 EXPIRED='0';
 RESULTONLY='0';
 
-RESULT='';
-
+# Static Option
 TIMEOUT='10';
 
-# Converts exit code into boolean
-# $1 - Exit Code
-# $2 - Reverse Color (boolean of 1 or 0)
+# Return
+RESULT='';
+
+
+# CodeToBool()
+# Return 0 or 1 exit code as a boolean value with color
+#
+# Parameters
+# $1 - Exit code
+# $2 - Reverse color
+# 
+# No return, echoes string
 function CodeToBool()
 {
 	if [ $1 == '0' -a $2 == '0' ]; then
@@ -38,8 +47,15 @@ function CodeToBool()
 	fi
 }
 
-# Return if date has been passed
+# CheckExpired()
+# Checks if SSL certificate is expired
+#
+# Parameters
 # $1 - Expiration date in 'date' format
+#
+# Return
+# 0 - Expired
+# 1 - Not expired
 function CheckExpired()
 {
 	local curdatenix=$(date +%s);
@@ -49,7 +65,13 @@ function CheckExpired()
 	return $?;
 }
 
-# Return whether or not the certificates match
+# Main()
+# Establishes OpenSSL connections to domain and port
+#
+# Return
+# 0 - Certificates match
+# 1 - Certificates don't match
+# 2 - Certificate(s) expired
 function Main()
 {
 	# Establish OpenSSL connections
@@ -62,7 +84,7 @@ function Main()
 		echo "Connection to $DOMAIN:$PORT timed out!";
 		return 4;
 	elif [ $opensslexit == '1' -o $_opensslexit == '1' ]; then
-		echo "Connection to $DOMAIN:$PORT was refused or failed!";
+		echo "OpenSSL connection to $DOMAIN:$PORT was refused or failed!";
 		return 5;
 	fi
 	# End OpenSSL connections
@@ -118,56 +140,53 @@ function Main()
 # Main code execution
 while [[ $# -gt 0 ]]
 do
-	arg=$1;
-	case $arg in
+	case $1 in
 		-d|--domain)
-			_arg=$(echo "$2" | cut -c'1-2');
-			if [[ $_arg != '--' && $_arg != '-' && -n $_arg ]]; then
+			if [[ $2 && $(echo $2 | cut -c'1') != '-' ]]; then
 				DOMAIN=$2;
 			else
 				# Program failed
 				if [ $RESULTONLY == '1' ]; then
-					echo 2;
+					echo 3;
 				fi
-				exit 2;
+				exit 3;
 			fi
-			shift
+			shift;
 			;;
 		-p|--port)
-			_arg=$(echo "$2" | cut -c'1-2');
-			if [[ $_arg != '--' && $_arg != '-' && -n $_arg ]]; then
+			if [[ $2 && $(echo $2 | cut -c'1') != '-' ]]; then
 				PORT=$2;
 			else
 				# Program failed
 				if [ $RESULTONLY == '1' ]; then
-					echo 2;
+					echo 3;
 				fi
-				exit 2;
+				exit 3;
 			fi
-			shift
+			shift;
 			;;
 		--expired)
 			EXPIRED='1';
-			shift
+			shift;
 			;;
 		--resultonly)
 			RESULTONLY='1';
-			shift
+			shift;
 			;;
 		*)
 			# Unknown argument
-			shift
+			shift;
 			;;
 	esac
 done
 
 if [[ -n $DOMAIN && -n $PORT ]]; then
 	# Make sure domain resolves.
-	if [ -z $(dig "$DOMAIN" +short) ]; then
+	if [ -z "$(dig $DOMAIN +short)" ]; then
 		if [ $RESULTONLY == '1' ]; then
-			echo 3;
+			echo 4;
 		fi
-		exit 3;
+		exit 4;
 	fi
 	
 	if [ $RESULTONLY == '1' ]; then
