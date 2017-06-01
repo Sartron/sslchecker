@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SSL Checker 0.52
+# SSL Checker 0.53
 # Written by Angel N.
 # Compares resulting SSL certificate between non-SNI & SNI
 
@@ -104,6 +104,9 @@ function Main()
 	local sni_expired=$(CheckExpired "$sni_enddate"; echo $?);
 	local sni_fingerprint=$(echo "$openssl_sni" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
 	# End variable dump
+	
+	[[ -z $nosni_issuer ]] && sni_issuer='None';
+	[[ -z $sni_issuer ]] && sni_issuer='None';
 	
 	#Output OpenSSL results
 	echo -e "\e[2mOpenSSL Results\e[0m";
