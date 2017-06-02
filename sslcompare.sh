@@ -76,8 +76,8 @@ function Main()
 {
 	# Establish OpenSSL connections
 	# Setting these variables to local causes the exit code to return 0, they must remain global
-	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); opensslexit=$?;
-	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" -servername "$DOMAIN" 2> /dev/null); _opensslexit=$?;
+	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); local opensslexit=$?;
+	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" -servername $DOMAIN 2> /dev/null); local _opensslexit=$?;
 	
 	## Abort if connection was made to a URL that didn't load
 	if [ $opensslexit == '124' -o $_opensslexit == '124' ]; then
@@ -91,14 +91,14 @@ function Main()
 	
 	# OpenSSL variable dump
 	local nosni_cn=$(echo "$openssl_nosni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
-	local nosni_issuer=$(echo "$openssl_nosni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/CN=' '{print $1}');
+	local nosni_issuer=$(echo "$openssl_nosni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local nosni_startdate=$(date -d "$(echo "$openssl_nosni" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
 	local nosni_enddate=$(date -d "$(echo "$openssl_nosni" | openssl x509 -noout -enddate | cut -d'=' -f2)" +'%b %d %G %r %Z');
 	local nosni_expired=$(CheckExpired "$nosni_enddate"; echo $?);
 	local nosni_fingerprint=$(echo "$openssl_nosni" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
 	
 	local sni_cn=$(echo "$openssl_sni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
-	local sni_issuer=$(echo "$openssl_sni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/CN=' '{print $1}');
+	local sni_issuer=$(echo "$openssl_sni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local sni_startdate=$(date -d "$(echo "$openssl_sni" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
 	local sni_enddate=$(date -d "$(echo "$openssl_sni" | openssl x509 -noout -enddate | cut -d'=' -f2)" +'%b %d %G %r %Z');
 	local sni_expired=$(CheckExpired "$sni_enddate"; echo $?);
@@ -186,9 +186,7 @@ done
 if [[ -n $DOMAIN && -n $PORT ]]; then
 	# Make sure domain resolves.
 	if [ -z "$(dig $DOMAIN +short)" ]; then
-		if [ $RESULTONLY == '1' ]; then
-			echo 4;
-		fi
+		test $RESULTONLY == '1' && echo 4;
 		exit 4;
 	fi
 	
