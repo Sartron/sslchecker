@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# SSL Checker 0.6
+# SSL Checker 0.61
 # Written by Angel N.
 # Check or compares resulting SSL certificate between non-SNI & SNI
 
 # Launch Options
 DOMAIN='';		# -d|--domain
-PORT='';		# -p|--port
+PORT='443';		# -p|--port
 OUTPUT='';		# --output nosni|sni
 EXPIRED='0';	# --expired
 SAN='0';		# --san
@@ -241,7 +241,7 @@ do
 	esac
 done
 
-if [[ -n $DOMAIN && -n $PORT ]]; then
+if [ -n $DOMAIN ]; then
 	# Make sure domain resolves
 	if [ -z "$(dig $DOMAIN +short)" ]; then
 		echo "$DOMAIN does not resolve to a valid IP!";
