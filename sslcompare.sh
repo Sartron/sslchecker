@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# SSL Checker 0.61
+# SSL Checker
 # Written by Angel N.
 # Check or compares resulting SSL certificate between non-SNI & SNI
 
 # Launch Options
-DOMAIN='';		# -d|--domain
+HOST='';		# -h|--host
 PORT='443';		# -p|--port
 OUTPUT='';		# --output nosni|sni
 EXPIRED='0';	# --expired
@@ -13,6 +13,7 @@ SAN='0';		# --san
 
 # Static Option
 TIMEOUT='10';
+VERSION='0.7';
 
 # Return
 RESULT='';
@@ -74,7 +75,7 @@ function GetSAN()
 		test $i == $sancount || san+='\n';
 	done
 	
-	echo $san;
+	test -n "$san" && echo "Subject Alternative Name:$san" || echo -e 'Subject Alternative Name: \e[31mNone\e[0m';
 }
 
 # GetNoSNI()
@@ -86,7 +87,7 @@ function GetSAN()
 function GetNoSNI()
 {
 	# OpenSSL variable dump
-	local nosni_cn=$(echo "$openssl_nosni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
+	local nosni_cn=$(echo "$openssl_nosni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local nosni_san=$(GetSAN "$openssl_nosni");
 	local nosni_issuer=$(echo "$openssl_nosni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local nosni_startdate=$(date -d "$(echo "$openssl_nosni" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
@@ -98,7 +99,7 @@ function GetNoSNI()
 	# Output OpenSSL results
 	echo -e "\e[2mOpenSSL Results\e[0m";
 	echo "Common Name: $nosni_cn";
-	test $SAN == '1' && echo -e "Subject Alternative Name: $nosni_san";
+	test $SAN == '1' && echo -e "$nosni_san";
 	[[ -z $nosni_issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $nosni_issuer";
 	echo -e "Expired: $(CodeToBool $nosni_expired 1)\n Start: $nosni_startdate\n End: $nosni_enddate";
 	#End OpenSSL results
@@ -113,7 +114,7 @@ function GetNoSNI()
 function GetSNI()
 {
 	# OpenSSL variable dump
-	local sni_cn=$(echo "$openssl_sni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}');
+	local sni_cn=$(echo "$openssl_sni" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local sni_san=$(GetSAN "$openssl_sni");
 	local sni_issuer=$(echo "$openssl_sni" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local sni_startdate=$(date -d "$(echo "$openssl_sni" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
@@ -125,7 +126,7 @@ function GetSNI()
 	# Output OpenSSL results
 	echo -e "\e[2mOpenSSL with SNI Results\e[0m";
 	echo "Common Name: $sni_cn";
-	test $SAN == '1' && echo -e "Subject Alternative Name: $sni_san";
+	test $SAN == '1' && echo -e "$sni_san";
 	[[ -z $sni_issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $sni_issuer";
 	echo -e "Expired: $(CodeToBool $sni_expired 1)\n Start: $sni_startdate\n End: $sni_enddate";
 	#End OpenSSL results
@@ -133,14 +134,18 @@ function GetSNI()
 
 function ShowHelp()
 {
-	echo 'Required Arguments
--d|--domain			Domain secured by SSL
--p|--port			Port secured by SSL
+	echo -e "\e[97mNAME\e[0m
+\tSSL Checker $VERSION
 
-Optional Arguments
---output nosni|sni		Output one certificate specifically
---expired			Overwrite exit code with 2 if either certificate (if --output is not specified) is expired
---san				Get Subject Alternative Name for certificate';
+\e[97mREQUIRED ARGUMENTS\e[0m
+\t-h|--host			Domain or IP secured by SSL
+\t-p|--port			Port secured by SSL
+
+\e[97mOPTIONAL ARGUMENTS\e[0m
+\t--output nosni|sni		Output one certificate specifically
+\t--expired			Overwrite exit code with 2 if either certificate (if --output is not specified) is expired
+\t--san				Get Subject Alternative Name for certificate
+\t--help				Show this help menu.";
 }
 
 # Main()
@@ -154,15 +159,15 @@ function Main()
 {
 	# Establish OpenSSL connections
 	# Setting these variables to local causes the exit code to return 0, they must remain global
-	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" 2> /dev/null); local opensslexit=$?;
-	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$DOMAIN:$PORT" -servername $DOMAIN 2> /dev/null); local _opensslexit=$?;
+	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT" 2> /dev/null); local opensslexit=$?;
+	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT" -servername $HOST 2> /dev/null); local _opensslexit=$?;
 	
 	## Abort if connection was made to a URL that didn't load
 	if [ $opensslexit == '124' -o $_opensslexit == '124' ]; then
-		echo "Connection to $DOMAIN:$PORT timed out!";
+		echo "Connection to $HOST:$PORT timed out!";
 		return 6;
 	elif [ $opensslexit == '1' -o $_opensslexit == '1' ]; then
-		echo "OpenSSL connection to $DOMAIN:$PORT was refused or failed!";
+		echo "OpenSSL connection to $HOST:$PORT was refused or failed!";
 		return 7;
 	fi
 	# End OpenSSL connections
@@ -208,9 +213,9 @@ function Main()
 while [[ $# -gt 0 ]]
 do
 	case $1 in
-		-d|--domain)
+		-h|--host)
 			if [[ $2 && $(echo $2 | cut -c'1') != '-' ]]; then
-				DOMAIN=$2;
+				HOST=$2;
 			fi
 			shift;
 			;;
@@ -234,6 +239,10 @@ do
 			EXPIRED='1';
 			shift;
 			;;
+		--help)
+			ShowHelp;
+			exit;
+			;;
 		*)
 			# Unknown argument
 			shift;
@@ -241,10 +250,9 @@ do
 	esac
 done
 
-if [ -n $DOMAIN ]; then
-	# Make sure domain resolves
-	if [ -z "$(dig $DOMAIN +short)" ]; then
-		echo "$DOMAIN does not resolve to a valid IP!";
+if [ -n "$HOST" ]; then
+	if [ $(ping -c 1 -w 3 $HOST &> /dev/null; echo $?) != '0' ]; then
+		echo "$HOST does not resolve!";
 		exit 5;
 	fi
 	
