@@ -13,10 +13,9 @@ SAN='0';		# --san
 
 # Static Option
 TIMEOUT='10';
-VERSION='0.7';
-
-# Return
-RESULT='';
+VERSION='0.71';
+SNICOMP='1';
+TIMEOUTCOMP='1';
 
 
 # CodeToBool()
@@ -139,13 +138,89 @@ function ShowHelp()
 
 \e[97mREQUIRED ARGUMENTS\e[0m
 \t-h|--host			Domain or IP secured by SSL
-\t-p|--port			Port secured by SSL
 
 \e[97mOPTIONAL ARGUMENTS\e[0m
+\t-p|--port			Port secured by SSL (default 443 if unspecified)
 \t--output nosni|sni		Output one certificate specifically
 \t--expired			Overwrite exit code with 2 if either certificate (if --output is not specified) is expired
 \t--san				Get Subject Alternative Name for certificate
 \t--help				Show this help menu.";
+}
+
+# GetStdConn()
+# Establish standard OpenSSL connection
+#
+# Return
+# 0 - No error
+# 6 - Connection timed out
+# 7 - Connection refused or unknown error
+function GetStdConn()
+{
+	if [ $TIMEOUTCOMP == '1' ]; then
+		openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT" 2>&1);
+		local exitcode=$?;
+		
+		# Since timing out from the timeout binary won't trigger default OpenSSL timing out behavior, it has to be handled differently.
+		# Ideally this shouldn't be triggered due to a ping check elsewhere in the code.
+		if [[ -z $openssl_nosni && $exitcode = '124' ]]; then
+			echo "Connection to $HOST:$PORT timed out!";
+			return 6; # Exit script
+		fi
+	else
+		openssl_nosni=$(echo | openssl s_client -connect "$HOST:$PORT" 2>&1);
+		local exitcode=$?;
+	fi
+	
+	if [ $(echo "$openssl_nosni" | grep 'connect:errno=') ]; then
+		case $(echo "$openssl_nosni" | awk -F': ' '/socket:/ {print $2}') in
+			'Connection refused')
+				echo "OpenSSL connection to $HOST:$PORT was refused!";
+				return 7;
+			;;
+			*)
+				echo "Unknown error when connecting to $HOST:$PORT";
+				return 7;
+			;;
+		esac
+	fi
+}
+
+# GetSNIConn()
+# Establish OpenSSL connection with SNI
+#
+# Return
+# 0 - No error
+# 6 - Connection timed out
+# 7 - Connection refused or unknown error
+function GetSNIConn()
+{
+	if [ $TIMEOUTCOMP == '1' ]; then
+		openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT" -servername $HOST 2>&1);
+		local exitcode=$?;
+		
+		# Since timing out from the timeout binary won't trigger default OpenSSL timing out behavior, it has to be handled differently.
+		# Ideally this shouldn't be triggered due to a ping check elsewhere in the code.
+		if [[ -z $openssl_sni && $exitcode = '124' ]]; then
+			echo "Connection to $HOST:$PORT timed out!";
+			return 6; # Exit script
+		fi
+	else
+		openssl_sni=$(echo | openssl s_client -connect "$HOST:$PORT" -servername $HOST 2>&1);
+		local exitcode=$?;
+	fi
+	
+	if [ $(echo "$openssl_sni" | grep 'connect:errno=') ]; then
+		case $(echo "$openssl_sni" | awk -F': ' '/socket:/ {print $2}') in
+			'Connection refused')
+				echo "OpenSSL connection to $HOST:$PORT was refused!";
+				return 7;
+			;;
+			*)
+				echo "Unknown error when connecting to $HOST:$PORT";
+				return 7;
+			;;
+		esac
+	fi
 }
 
 # Main()
@@ -158,25 +233,17 @@ function ShowHelp()
 function Main()
 {
 	# Establish OpenSSL connections
-	# Setting these variables to local causes the exit code to return 0, they must remain global
-	openssl_nosni=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT" 2> /dev/null); local opensslexit=$?;
-	openssl_sni=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT" -servername $HOST 2> /dev/null); local _opensslexit=$?;
-	
-	## Abort if connection was made to a URL that didn't load
-	if [ $opensslexit == '124' -o $_opensslexit == '124' ]; then
-		echo "Connection to $HOST:$PORT timed out!";
-		return 6;
-	elif [ $opensslexit == '1' -o $_opensslexit == '1' ]; then
-		echo "OpenSSL connection to $HOST:$PORT was refused or failed!";
-		return 7;
+	GetStdConn || return $?;
+	if [ $SNICOMP == '1' ]; then
+		GetSNIConn || return $?;
 	fi
-	# End OpenSSL connections
+	
 	
 	local crtexpired='';
 	if [ $OUTPUT ]; then
 		# Execute OpenSSL connection
 		test $OUTPUT == 'nosni' && GetNoSNI && crtexpired=$nosni_expired;
-		test $OUTPUT == 'sni' && GetSNI && crtexpired=$sni_expired;
+		test $OUTPUT == 'sni' && $SNICOMP == '1' && GetSNI && crtexpired=$sni_expired;
 		
 		# --output will only return whether or not the certificate was expired
 		test $crtexpired == '0' && return '2' || return '3';
@@ -184,11 +251,12 @@ function Main()
 		# Execute OpenSSL connections
 		GetNoSNI;
 		echo;
-		GetSNI;
+		test $SNICOMP == '1' && GetSNI;
 		
 		# Check if either certificate is expired
 		crtexpired=$([[ $EXPIRED == '1' && $nosni_expired == '0' || $EXPIRED == '1' && $sni_expired == '0' ]]; echo $?);
 		
+		local RESULT='';
 		printf "\n\e[2mFingerprint Match\e[0m: ";
 		if [ $nosni_fingerprint != $sni_fingerprint ]; then
 			# Failure
@@ -209,7 +277,35 @@ function Main()
 	fi
 }
 
+# CompatibilityCheck()
+# Checks whether or not SNI is supported
+# Also checks if the GNU coreutil timeout is installed
+function CompatibilityCheck()
+{
+	local opensslver=$(openssl version | awk '{print $2}' | cut -d'-' -f1);
+	
+	# Check if the OpenSSL version is below 1.0
+	# Check if the last character is LESS than f (which is when SNI became supported)
+	# This includes the characters a-e (e.g. 0.9.8e)
+	if [[ $(echo $opensslver | cut -d'.' -f1) != '1' && \
+	$(echo $opensslver | tail -c 2 | tr '[a-e]' '[1-6]' | grep -E '[1-6]') ]]; then
+		# SNI is not supported
+		SNICOMP='0';
+	else
+		# SNI is supported
+		SNICOMP='1';
+	fi
+	
+	#Check for timeout compatibility
+	test "$(timeout --version 2> /dev/null)" || TIMEOUTCOMP='0';
+}
+
 # Main code execution
+CompatibilityCheck;
+
+echo "\$SNICOMP = $SNICOMP";
+echo "\$TIMEOUTCOMP = $TIMEOUTCOMP";
+
 while [[ $# -gt 0 ]]
 do
 	case $1 in
@@ -221,12 +317,21 @@ do
 			;;
 		-p|--port)
 			if [[ $2 && $(echo $2 | cut -c'1') != '-' ]]; then
+				if [ $2 == '80' ]; then
+					echo 'Port 80 is not an allowed port.';
+					exit 4;
+				fi
 				PORT=$2;
 			fi
 			shift;
 			;;
 		--output)
 			if [ $2 ] && [ $2 == 'nosni' -o $2 == 'sni' ]; then
+				if [ $2 == 'sni' -a $SNICOMP == '0' ]; then
+					# Exit script if server does not support SNI
+					echo "Script cannot be executed with '--output sni' as the server does not support SNI!";
+					exit 4;
+				fi
 				OUTPUT=$2;
 			fi
 			shift;
