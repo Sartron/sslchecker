@@ -272,10 +272,12 @@ function CompatibilityCheck()
 {
 	local opensslver=$(openssl version | awk '{print $2}' | cut -d'-' -f1);
 	
-	# Check if the OpenSSL version is below 1.0
-	# Check if the last character is LESS than f (assuming the version is 0.9.8)
-	# This includes the characters a-e (e.g. 0.9.8e)
-	if [[ $(echo $opensslver | cut -d'.' -f1) != '1' && \
+	# Multiple checks are run to parse the OpenSSL version
+	# 1. Check if the OpenSSL major version is below 1.0.0
+	# 2. Check if the OpenSSL excludes 0.9.8
+	# 3. Check if the last letter is "below" f (e.g. 0.9.8e)
+	if [[ $(echo $opensslver | cut -d'.' -f1) != '1' ]] && \
+	[[ -z $(echo $opensslver | grep '0.9.8') || \
 	$(echo $opensslver | tail -c 2 | tr '[a-e]' '[1-6]' | grep -E '[1-6]') ]]; then
 		# SNI is not supported
 		SNICOMP='0';
