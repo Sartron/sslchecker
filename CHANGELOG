@@ -1,0 +1,61 @@
+0.1	- April 30 2017: Initial release, works.
+0.2 - April 31 2017: Proper date parsing when comparing single digit days and double digit days.
+0.3 - May 4, 2017
+ Program will exit if unable to curl URL.
+  Exit code 4: Connection timed out
+  Exit code 5: Connection refused
+ --resultonly properly outputs failure from exit codes 2 and 3.
+0.4 - May 15, 2017
+ Added --expired to return error code 2 in case user is checking for expiration status.
+ Modified the formatting of the script output and added color.
+ Removed multiple OpenSSL connections, curl and OpenSSL connection is only established once now.
+ Corrected conditions that would cause the program to experience error or hang.
+  Program requires both domain and port input to proceed, for some reason it was conditionally OR before.
+  Implemented a timeout clause on the OpenSSL connection as it would hang for about 2 minutes otherwise.
+ Code is generally more optimized, although fairly condition dependent now.
+0.5 - May 24 2017
+ Removed ParseDate() in favor of 'date -d' parsing.
+  Certificate dates are now localized to system time
+ Removed use of curl in favor of 's_client -servername' which supports SNI.
+ SSL certificate is now just a check between fingerprints, which are entirely unique.
+ Removed comparison results section, kind of pointless to show what can be seen already.
+0.51 - May 24 2017
+ Set OpenSSL variables back to global scope since local would interfere with exit codes.
+ Removed 'https://' from exit code 5 and 6 output since no curl connection is being made.
+ Removed some leftover references to curl.
+0.52 - May 25 2017
+ Optimized argument checking some.
+ Fixed error that would occur when dig returned more than 1 value.
+ Fixed incorrect exit codes.
+  Argument failure: 2 -> 3
+  Domain resolution fail: 3 -> 4
+ Functions have better descriptions now.
+0.53 - May 31 2017
+ Certificates that are self-signed return 'none' as their organization rather than blank output.
+0.6 - June 4 2017
+ Adjusted arguments available for the script.
+  Removed --resultonly, you may simply use the exit code and pipe stdout to /dev/null to achieve the same thing
+  Added --san: Used to retrieve subject alternative name
+  Added --output: Specify what OpenSSL connection is being outputted (No SNI vs. SNI)
+ Restructured script design and optimized some code for use with new args.
+ Updated patterns for issuer awk so it can handle non /CN= separators. This is to help fix GoDaddy-issued certificates which use /OU= as well.
+ Added exit code 3 for certificates being not expired.
+ Added a ShowHelp() function which is called when invalid args are supplied.
+0.61 - June 8 2017
+ Added default port of 443.
+0.7 - June 11 2017
+ Added support for connecting to an IP and not just a domain name.
+ -d|--domain changed to -h|--host.
+ Added --help.
+ --san will output 'None' if there are no results.
+ Improved the logic of parsing common name in situations where information is not sorted normally. (specifically this site I found called ninava.nahrainweb.com)
+0.71 - June 14 2017
+ Updated usage information as -p|--port is optional and not required.
+0.8 - June 18 2017
+ Added compatibility for CentOS 5 (servers without SNI) and servers without the tool 'timeout'.
+  CompatibilityCheck() which will check to see whether or not the server supports SNI, as well if whether or not it has timeout
+  Various features of the script are stripped or altered if theompatibility checks fail
+ Improved error parsing by piping stderr to stdout for OpenSSL connections, and then parsing the text and not exit code.
+ Script will now reject port 80 since OpenSSL won't work with that port.
+ Script is generally more cleaned up and logical, although much larger.
+ Fixed --expired so it can return exit code 2 and 3. Before, it only supported 2.
