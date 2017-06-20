@@ -13,7 +13,7 @@ SAN='0';		# --san
 
 # Static Option
 TIMEOUT='10';
-VERSION='0.8';
+VERSION='0.81';
 SNICOMP='1';
 TIMEOUTCOMP='1';
 
@@ -100,6 +100,7 @@ function EstablishConn()
 		fi
 	fi
 	
+	# Error catching for socket/connection based errors.
 	if [ $(echo "$opensslconn" | grep 'connect:errno=') ]; then
 		case $(echo "$opensslconn" | awk -F': ' '/socket:/ {print $2}') in
 			'Connection refused')
@@ -107,10 +108,20 @@ function EstablishConn()
 				return 7;
 			;;
 			*)
-				echo "Unknown error when connecting to $HOST:$PORT";
+				echo "Unknown error when connecting to $HOST:$PORT!";
 				return 7;
 			;;
 		esac
+	fi
+	
+	# Generic error catching for non-socket/connection based errors.
+	if [ -n "$(echo "$opensslconn" | grep -i ':error:')" ]; then
+		if [ -n "$(echo "$opensslconn" | grep -i 'SSL23_GET_SERVER_HELLO:unknown protocol')" ]; then
+			echo "Unknown protocol received when connecting to $HOST:$PORT!";
+			return 7;
+		fi
+		echo -e "Unknown error when connecting to $HOST:$PORT!";
+		return 7;
 	fi
 }
 
@@ -230,6 +241,7 @@ function Main()
 		echo;
 		GetSNI && crtexpired=$?;
 		
+		# Compare resulting fingerprints
 		printf "\n\e[2mFingerprint Match\e[0m: ";
 		if [ $NOSNI_FINGERPRINT != $SNI_FINGERPRINT ]; then
 			# Failure
@@ -255,14 +267,24 @@ function ShowHelp()
 \tSSL Checker $VERSION
 
 \e[97mREQUIRED ARGUMENTS\e[0m
-\t-h|--host			Domain or IP secured by SSL
+\t-h|--host		Domain or IP secured by SSL
 
 \e[97mOPTIONAL ARGUMENTS\e[0m
-\t-p|--port			Port secured by SSL (default 443 if unspecified)
-\t--output nosni|sni		Output one certificate specifically
-\t--expired			Overwrite exit code with 2 if either certificate (if --output is not specified) is expired
-\t--san				Get Subject Alternative Name for certificate
-\t--help				Show this help menu.";
+\t-p|--port		Port secured by SSL (default 443 if unspecified)
+\t--output nosni|sni	Output one certificate specifically
+\t--expired		Overwrite exit code with 2 if either certificate is expired
+\t--san			Get Subject Alternative Name for certificate
+\t--help			Show this help menu
+
+\e[97mEXIT CODES\e[0m
+\t0			Returned certificates have matching fingerprints
+\t1			Returned certificates do not have matching fingerprints
+\t2			Returned certificate is expired
+\t3			Returned certificate is not expired
+\t4			Invalid script arguments supplied
+\t5			Provided host does not resolve
+\t6			Connection to host timed out
+\t7			Connection to port refused or connection failed (generic)";
 }
 
 # CompatibilityCheck()
@@ -303,10 +325,6 @@ do
 			;;
 		-p|--port)
 			if [[ $2 && $(echo $2 | cut -c'1') != '-' ]]; then
-				if [ $2 == '80' ]; then
-					echo 'Port 80 is not an allowed port.';
-					exit 4;
-				fi
 				PORT=$2;
 			fi
 			shift;
@@ -335,7 +353,6 @@ do
 			exit;
 			;;
 		*)
-			# Unknown argument
 			shift;
 			;;
 	esac

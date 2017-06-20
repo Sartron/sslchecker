@@ -59,3 +59,8 @@
  Script will now reject port 80 since OpenSSL won't work with that port.
  Script is generally more cleaned up and logical, although much larger.
  Fixed --expired so it can return exit code 2 and 3. Before, it only supported 2.
+0.81 - June 20 2017
+ Added clause to better catch generic errors as well as connections to ports sending an invalid protocol.
+  Removed port 80 from unallowed ports.
+ Added exit codes to '--help'.
+ Tidied up README information.
