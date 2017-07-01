@@ -64,3 +64,7 @@
   Removed port 80 from unallowed ports.
  Added exit codes to '--help'.
  Tidied up README information.
+0.82 - July 1 2017
+ Tweaked ShowHelp() to produce less information when --help isn't provided.
+ Added a clause for the certificate common name not being specified.
+  This is needed because multi-domain SSL certificates may not have a CN and instead cover domains names within the SAN

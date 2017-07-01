@@ -13,7 +13,7 @@ SAN='0';		# --san
 
 # Static Option
 TIMEOUT='10';
-VERSION='0.81';
+VERSION='0.82';
 SNICOMP='1';
 TIMEOUTCOMP='1';
 
@@ -165,7 +165,7 @@ function GetNoSNI()
 	
 	# Output OpenSSL results
 	echo -e "\e[2mOpenSSL Results\e[0m";
-	echo "Common Name: $nosni_cn";
+	[ -z $nosni_cn ] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $nosni_cn";
 	test $SAN == '1' && echo -e "$nosni_san";
 	[[ -z $nosni_issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $nosni_issuer";
 	echo -e "Expired: $(CodeToBool $nosni_expired 1)\n Start: $nosni_startdate\n End: $nosni_enddate";
@@ -194,7 +194,7 @@ function GetSNI()
 	
 	# Output OpenSSL results
 	echo -e "\e[2mOpenSSL with SNI Results\e[0m";
-	echo "Common Name: $sni_cn";
+	[ -z $sni_cn ] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $sni_cn";
 	test $SAN == '1' && echo -e "$sni_san";
 	[[ -z $sni_issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $sni_issuer";
 	echo -e "Expired: $(CodeToBool $sni_expired 1)\n Start: $sni_startdate\n End: $sni_enddate";
@@ -263,10 +263,14 @@ function Main()
 # Shows help information
 function ShowHelp()
 {
-	echo -e "\e[97mNAME\e[0m
+	test $1 == '0' && echo -e "\e[97mNAME\e[0m
 \tSSL Checker $VERSION
 
-\e[97mREQUIRED ARGUMENTS\e[0m
+\e[97mDESCRIPTION\e[0m
+\tScript used for checking for the presence of an SSL certificate on a hostname or IP
+";
+
+	echo -e "\e[97mREQUIRED ARGUMENTS\e[0m
 \t-h|--host		Domain or IP secured by SSL
 
 \e[97mOPTIONAL ARGUMENTS\e[0m
@@ -274,8 +278,9 @@ function ShowHelp()
 \t--output nosni|sni	Output one certificate specifically
 \t--expired		Overwrite exit code with 2 if either certificate is expired
 \t--san			Get Subject Alternative Name for certificate
-\t--help			Show this help menu
+\t--help			Show this help menu";
 
+	test $1 == '0' && echo -e "
 \e[97mEXIT CODES\e[0m
 \t0			Returned certificates have matching fingerprints
 \t1			Returned certificates do not have matching fingerprints
@@ -349,7 +354,7 @@ do
 			shift;
 			;;
 		--help)
-			ShowHelp;
+			ShowHelp '0';
 			exit;
 			;;
 		*)
@@ -368,6 +373,6 @@ if [ -n "$HOST" ]; then
 	Main;
 	exit $?;
 else
-	ShowHelp;
+	ShowHelp '1';
 	exit 4;
 fi
