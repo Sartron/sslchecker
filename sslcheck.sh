@@ -2,7 +2,8 @@
 
 # SSL Checker
 # Written by Angel N.
-# Wrapper for OpenSSL s_client used to retrieve SSL information
+# Wrapper for openSSL s_client used to retrieve SSL information
+# Also supports PEM from stdin
 
 # User Options
 HOST='';		# -h --host
@@ -15,9 +16,11 @@ FORCE='0';		# --force
 
 # Script Options
 TIMEOUT='10';
-VERSION='0.9';
+VERSION='0.91';
+VERSIONDATE='July 30, 2017';
 SNICOMP='1';
 TIMEOUTCOMP='1';
+HOSTISIP='0';
 
 
 # CodeToBool()
@@ -88,6 +91,8 @@ function X509_Revoked()
 	local ocspurl=$(echo "$1" | openssl x509 -noout -ocsp_uri);
 	local crl=$(echo "$1" | openssl x509 -noout -text | awk '/CRL Distribution/,/URI/ { print $0 }' | awk -F'URI:' '/URI/ { print $2 }');
 	
+	#openssl s_client -status 2>&1 | grep -i 'ocsp'
+	
 	echo -e "Revoked: null\n OCSP URL: $ocspurl\n CRL: $crl";
 }
 
@@ -95,7 +100,8 @@ function X509_Revoked()
 # Converts output of s_client into neat text
 #
 # Parameters
-# $1 - s_client Output
+# $1 - s_client/x509 Input
+# $2 - stdin Boolean
 #
 # Return: None
 function SClient_X509()
@@ -108,8 +114,8 @@ function SClient_X509()
 	local expired=$(CheckExpired "$enddate"; echo $?);
 	local fingerprint=$(echo "$1" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
 	
-	echo -e "\e[2m$HOST:$PORT$(local ip=$(dig $HOST +short | tail -1); [[ $SNICOMP == '1' && $NOSNI != '1' && -n $NAME ]] && printf " ($NAME)"; test -n "$ip" && echo " - $ip")\e[0m";
-	[ -z $cn ] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $cn";
+	test "$2" == '0' && echo -e "\e[2m$HOST:$PORT$(local ip=$(dig $HOST +short | head -1); [[ $SNICOMP == '1' && $NOSNI != '1' && -n $NAME ]] && printf " ($NAME)"; test -n "$ip" && echo " - $ip")\e[0m";
+	[[ -z $cn ]] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $cn";
 	test $SAN == '1' && echo -e "$san";
 	[[ -z $issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $issuer";
 	echo -e "Expired: $(CodeToBool $expired 1)\n Start: $startdate\n End: $enddate";
@@ -117,10 +123,10 @@ function SClient_X509()
 }
 
 # SClient_ErrorParse()
-# Checks the s_client connection for errors.
+# Checks the s_client connection for errors
 #
 # Parameters
-# $1 - s_client Output
+# $1 - s_client/x509 Input
 #
 # Return
 # 0 - No errors found
@@ -134,7 +140,7 @@ function SClient_ErrorParse()
 	[[ $TIMEOUTCOMP == '1' && -z $1 ]] && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
 	
 	# Error catching for specific errors. If no error is found, function returns 0 and proceeds with the script.
-	if [[ $(echo "$1" | grep 'connect:errno=') || $(echo "$1" | grep ':error:') ]]; then
+	if [[ $(echo "$1" | grep -E 'connect:errno=|:error:|write:errno=') ]]; then
 		test "$(echo "$1" | grep 'socket: Connection refused')" && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
 		test "$(echo "$1" | grep 'socket: Connection timed out')" && echo "Connection to $HOST:$PORT was refused! (error 2)" && return 2;
 		test "$(echo "$1" | grep 'SSL23_GET_SERVER_HELLO:unknown protocol')" && \
@@ -206,14 +212,14 @@ function Main()
 	test $SNICOMP == '1' && sclient_sni=$(SClientConnect_SNI) || sclient_sni_exitcode=$?;
 	
 	# SNI Connection
-	if [[ $SNICOMP == '1' && $NOSNI != '1' ]]; then
+	if [[ $SNICOMP == '1' && $NOSNI != '1' ]] && [[ $HOSTISIP != '1' ]] || [[ $HOSTISIP == '1' && -n $NAME ]]; then
 		test $sclient_sni_exitcode && echo -e "$sclient_sni" && return $sclient_sni_exitcode;
-		SClient_X509 "$sclient_sni" && return 0;
+		SClient_X509 "$sclient_sni" '0' && return 0;
 	fi
 	
 	# No SNI
 	test $sclient_exitcode && echo -e "$sclient" && return $sclient_exitcode;
-	SClient_X509 "$sclient";
+	SClient_X509 "$sclient" '0';
 }
 
 # ShowHelp()
@@ -222,14 +228,16 @@ function Main()
 # Parameters
 # $1 - Boolean toggle determining whether or not to show full help (0 = full, 1 = short)
 #
-# Returns: None
+# Return: None
 function ShowHelp()
 {
 	test $1 == '0' && echo -e "\e[97mNAME\e[0m
 \tSSL Checker $VERSION
+\tUpdated $VERSIONDATE
 
 \e[97mDESCRIPTION\e[0m
 \tScript used for checking for the presence of an SSL certificate on a hostname or IP
+\tAlso can interpret a valid x509 certificate from standard input
 ";
 
 	echo -e "\e[97mREQUIRED ARGUMENTS\e[0m
@@ -242,7 +250,11 @@ function ShowHelp()
 \t--nosni			Retrieves the SSL certificate without specifying a servername
 \t--san			Get Subject Alternative Name for certificate
 \t--force			Bypass script's ping check on the host
-\t--help			Show this help menu as well as exit codes";
+\t--help			Show this help menu as well as exit codes
+
+\e[97mSTANDARD INPUT\e[0m
+	bash < cert.pem
+	cat cert.pem | bash";
 
 	test $1 == '0' && echo -e "
 \e[97mEXIT CODES\e[0m
@@ -252,7 +264,8 @@ function ShowHelp()
 \t3			Connection timed out
 \t4			Connection received unknown protocol
 \t5			Host did not respond
-\t6			Invalid arguments supplied";
+\t6			Invalid arguments supplied
+\t7			stdin was invalid";
 }
 
 # CompatibilityCheck()
@@ -261,7 +274,7 @@ function ShowHelp()
 #
 # Parameters: None
 #
-# Returns: None
+# Return: None
 CompatibilityCheck()
 {
 	local opensslver=$(openssl version | awk '{print $2}' | cut -d'-' -f1);
@@ -300,6 +313,9 @@ function HandleArgs()
 				if [[ $2 && $(echo $2 | cut -c'1') != '-' ]]; then
 					# Used as part of s_client -connect.
 					HOST=$2;
+					
+					# Check if provided argument is an IP by getting output from dig.
+					[[ -z $(dig $HOST +short) ]] && HOSTISIP='1';
 				fi
 				shift;
 				;;
@@ -355,8 +371,34 @@ function HandleArgs()
 	done
 }
 
+# ParseStdin()
+# Pass standard input to SClient_ErrorParse() and SClient_X509()
+# 
+# Parameters
+# $1 - $(cat /dev/stdin)
+#
+# Return
+# 0 - Success
+# 7 - Failure
+function ParseStdin()
+{
+	local stdin_x509=$(echo "$1" | openssl x509 2>&1);
+	local exitcode=$(SClient_ErrorParse "$stdin_x509" > /dev/null; echo $?);
+	test "$exitcode" == '0' && SClient_X509 "$stdin_x509" "1" && exit 0;
+	test "$exitcode" != '0' && echo 'Unable to interpret value from stdin. (error 7)' && exit 7;
+}
+
+# Script pre-checks              #
+# Check for script compatibility #
+# Pass arguments to script       #
+# Check for input on script      #
 CompatibilityCheck;
 HandleArgs "$@";
+[[ ! -t 0 && -t 1 ]] && ParseStdin "$(cat /dev/stdin)";
+#                                #
+
+# Script pre-check scompleted               #
+# Proceed with default script functionality #
 if [ -n "$HOST" ]; then
 	if [ $(ping -c 1 -w 3 $HOST &> /dev/null; echo $?) != '0' ]; then
 		# If --force is enabled, then ignore the fact that the ping failed.

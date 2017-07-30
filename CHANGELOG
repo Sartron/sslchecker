@@ -135,3 +135,15 @@ _ Empty certificate common name will now return 'None' if there are no results. 
 ~ Tweaked descriptions provided by ShowHelp().
 ~ General documentation of script improved.
 ~ Updated README to serve script's new purpose and new arguments.
+
+--------------------------
+-- 0.91   July 30 2017  --
+--------------------------
++ Added ParseStdin() which allows the script to interpret valid x509 PEM formatted certificates from standard input. Maybe it works for other formats since it just used openssl x509, not sure.
++ Error code 7 added which handles any error caused by the certificate received from stdin. No verbose errors are planned for certificates themselves, only s_client connections.
++ ShowHelp() shows an 'official' release date for the current script version now.
+~ Tweaked SClient_X509() to allow it to handle PEM output rather than just s_client output. Parameter $2 allows the function to toggle the typical s_client connection information.
+~ Worked on standardizing comments within the source code a little more.
+~ Using an IP address as the host now requires -n or --name in order to supply -servername to the host. IP address hosts will by default no longer use SNI.
+_ Fixed error that would occur if common name had a space in it. This could occur in instances where the common name is not a domain name.
+_ Added error parsing for s_client errors originating from write:errno=. The error code I got specifically was 104 which apparently indicates connection reset (ECONNRESET). It'll just use a generic error for now.
