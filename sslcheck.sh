@@ -2,8 +2,8 @@
 
 # SSL Checker
 # Written by Angel N.
-# Wrapper for openSSL s_client used to retrieve SSL information
-# Also supports PEM from stdin
+# Wrapper for openssl s_client used to retrieve SSL information
+# Also supports certificates from stdin
 
 # User Options
 HOST='';		# -h --host
@@ -12,23 +12,26 @@ PORT='443';		# -p --port
 PROTOCOL='';	# --protocol
 NOSNI='0';		# --nosni
 SAN='0';		# --san
+FORMAT='';		# --format
 FORCE='0';		# --force
 
 # Script Options
 TIMEOUT='10';
-VERSION='0.91';
-VERSIONDATE='July 30, 2017';
+VERSION='0.92';
+VERSIONDATE='August 03, 2017';
 SNICOMP='1';
 TIMEOUTCOMP='1';
 HOSTISIP='0';
 
 
 # CodeToBool()
-# Return 0 or 1 exit code as a boolean value with color
+# Translate exit code into boolean with color
 #
 # Parameters
-# $1 - Exit code
-# $2 - Reverse color
+# $1 - Exit Code
+# $2 - Inverse Color
+#  0 - False
+#  1 - True
 # 
 # Return: None
 function CodeToBool()
@@ -37,9 +40,9 @@ function CodeToBool()
 		echo -e "\e[32mTrue\e[0m";
 	elif [ $1 == '0' -a $2 == '1' ]; then
 		echo -e "\e[31mTrue\e[0m";
-	elif [ $1 == '1' -a $2 == '0' ]; then
+	elif [ $1 -gt '0' -a $2 == '0' ]; then
 		echo -e '\e[31mFalse\e[0m';
-	elif [ $1 == '1' -a $2 == '1' ]; then
+	elif [ $1 -gt '0' -a $2 == '1' ]; then
 		echo -e '\e[32mFalse\e[0m';
 	fi
 }
@@ -55,33 +58,35 @@ function CodeToBool()
 # 1 - Not expired
 function CheckExpired()
 {
-	local curdatenix=$(date +%s);
-	local expdatenix=$(date -d "$1" +%s);
+	local curdatenix=$(date +'%s');
+	local expdatenix=$(date -d "$1" +'%s');
 	
 	test $curdatenix -ge $expdatenix;
 	return $?;
 }
 
-# SClient_GetSAN()
+# X509_GetSAN()
 # Output Subject Alternative Name
 #
 # Parameters
 # $1 - OpenSSL base output
 #
 # Return: None
-function SClient_GetSAN()
+function X509_GetSAN()
 {
 	local base=$(echo "$1" | openssl x509 -noout -text | grep 'DNS:');
 	local sancount=$(echo "$base" | grep -o 'DNS:' | wc -l);
-	local san='';
+	local san;
 	
 	for (( i = 1; i <= $sancount; i++ ))
 	do
-		san+=" $(echo $base | cut -d',' -f$i | cut -d':' -f2)";
+		san+=" $(echo $base | cut -d',' -f${i} | cut -d':' -f2)";
 		test $i == $sancount || san+='\n';
 	done
 	
-	test -n "$san" && echo "Subject Alternative Name:$san" || echo -e 'Subject Alternative Name: \e[31mNone\e[0m';
+	test -z "$san" && echo -e 'Subject Alternative Name: \e[31mNone\e[0m'&& return 0;
+	[[ -n $san && $SAN == '0' ]] && echo -e "Subject Alternative Name: $sancount Names" && return 0;
+	echo -e "Subject Alternative Name: $sancount Names\n$san" && return 0;
 }
 
 # X509_Revoked()
@@ -107,16 +112,17 @@ function X509_Revoked()
 function SClient_X509()
 {
 	local cn=$(echo "$1" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}' | awk -F'/.+=' '{print $1}');
-	local san=$(SClient_GetSAN "$1");
+	local san=$(X509_GetSAN "$1");
 	local issuer=$(echo "$1" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}');
 	local startdate=$(date -d "$(echo "$1" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
 	local enddate=$(date -d "$(echo "$1" | openssl x509 -noout -enddate | cut -d'=' -f2)" +'%b %d %G %r %Z');
 	local expired=$(CheckExpired "$enddate"; echo $?);
 	local fingerprint=$(echo "$1" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
 	
-	test "$2" == '0' && echo -e "\e[2m$HOST:$PORT$(local ip=$(dig $HOST +short | head -1); [[ $SNICOMP == '1' && $NOSNI != '1' && -n $NAME ]] && printf " ($NAME)"; test -n "$ip" && echo " - $ip")\e[0m";
+	test "$2" == '0' && echo -e "\e[2m${HOST}:${PORT}$([[ $SNICOMP == '1' && $NOSNI != '1' && -n $NAME ]] && printf " ($NAME)"; test $HOSTISIP == '0' && echo " - $(dig $HOST +short | head -1)")\e[0m";
+	#test $2 == '0' && echo -e "\e[2m${HOST}:${PORT}$()\e[0m";
 	[[ -z $cn ]] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $cn";
-	test $SAN == '1' && echo -e "$san";
+	echo -e "$san";
 	[[ -z $issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $issuer";
 	echo -e "Expired: $(CodeToBool $expired 1)\n Start: $startdate\n End: $enddate";
 	echo "Fingerprint: $fingerprint";
@@ -140,13 +146,13 @@ function SClient_ErrorParse()
 	[[ $TIMEOUTCOMP == '1' && -z $1 ]] && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
 	
 	# Error catching for specific errors. If no error is found, function returns 0 and proceeds with the script.
-	if [[ $(echo "$1" | grep -E 'connect:errno=|:error:|write:errno=') ]]; then
+	if [[ $(echo "$1" | grep -E ":errno=|:error:|didn't found starttls") ]]; then
 		test "$(echo "$1" | grep 'socket: Connection refused')" && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
 		test "$(echo "$1" | grep 'socket: Connection timed out')" && echo "Connection to $HOST:$PORT was refused! (error 2)" && return 2;
 		test "$(echo "$1" | grep 'SSL23_GET_SERVER_HELLO:unknown protocol')" && \
 			echo "Unknown protocol received from $HOST:$PORT! (error 4)\nTry specifying a protocol using --protocol." && return 4;
 		
-		echo "Unknown error encountered when connecting to $HOST:$PORT! (error 1)" && return 1; # Generic error, exit
+		echo "Unknown error encountered when connecting to $HOST:$PORT! (error 1)" && return 1; # Generic error
 	fi
 }
 
@@ -156,41 +162,14 @@ function SClient_ErrorParse()
 # Parameters
 # $1 - Host
 # $2 - Port
+# $3 - Name
 #
 # Return
 # See SClient_ErrorParse()
 function SClientConnect()
 {
-	# Establish the s_client connection without specifying -servername.
-	# Use coreutil timeout if it is avaialable to expire the connection.
-	test $TIMEOUTCOMP == '1' && \
-		local connectionstr=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT"$(test -n "$PROTOCOL" && echo " -starttls $PROTOCOL") -showcerts 2>&1) || \
-		local connectionstr=$(echo | openssl s_client -connect "$HOST:$PORT"$(test -n "$PROTOCOL" && echo " -starttls $PROTOCOL") -showcerts 2>&1);
-	
-	# If there's an error, return the error code from SClient_ErrorParse().
-	SClient_ErrorParse "$connectionstr" || return $?;
-	
-	# No error, return the s_client output.
-	echo "$connectionstr";
-}
-
-# SClientConnect_SNI()
-# Establishes s_client connection to host and port
-#
-# Parameters
-# $1 - Host
-# $2 - Port
-# $3 - Name
-#
-# Return
-# See SClient_ErrorParse()
-function SClientConnect_SNI()
-{
-	# Establish the s_client connection while specifying -servername.
-	# Use coreutil timeout if it is avaialable to expire the connection.
-	test $TIMEOUTCOMP == '1' && \
-		local connectionstr=$(echo | timeout $TIMEOUT openssl s_client -connect "$HOST:$PORT"$(test -n "$PROTOCOL" && echo " -starttls $PROTOCOL") -servername $(test -n "$NAME" && echo $NAME || echo $HOST) -showcerts 2>&1) || \
-		local connectionstr=$(echo | openssl s_client -connect "$HOST:$PORT"$(test -n "$PROTOCOL" && echo " -starttls $PROTOCOL") -servername $(test -n "$NAME" && echo $NAME || echo $HOST) -showcerts 2>&1);
+	# Store output of s_client into variable.
+	local connectionstr=$(echo |$(test $TIMEOUTCOMP == '1' && echo " timeout $TIMEOUT") openssl s_client -connect "${1}:${2}"$([[ -n $PROTOCOL ]] && echo " -starttls $PROTOCOL")$([[ -n $3 ]] && echo " -servername $3") -showcerts 2>&1);
 	
 	# If there's an error, return the error code from SClient_ErrorParse().
 	SClient_ErrorParse "$connectionstr" || return $?;
@@ -200,16 +179,15 @@ function SClientConnect_SNI()
 }
 
 # Main()
-# Establishes OpenSSL connections to host and port
+# Establishes s_client connections and parses it
 #
-# Return
-# 0 - Certificates match
-# 1 - Certificates don't match
-# 2 - Certificate(s) expired
+# Parameters: None
+#
+# Return: None
 function Main()
 {
-	sclient=$(SClientConnect) || local sclient_exitcode=$?;
-	test $SNICOMP == '1' && sclient_sni=$(SClientConnect_SNI) || sclient_sni_exitcode=$?;
+	sclient=$(SClientConnect $HOST $PORT) || local sclient_exitcode=$?;
+	test $SNICOMP == '1' && sclient_sni=$(SClientConnect $HOST $PORT $NAME) || sclient_sni_exitcode=$?;
 	
 	# SNI Connection
 	if [[ $SNICOMP == '1' && $NOSNI != '1' ]] && [[ $HOSTISIP != '1' ]] || [[ $HOSTISIP == '1' && -n $NAME ]]; then
@@ -246,15 +224,16 @@ function ShowHelp()
 \e[97mOPTIONAL ARGUMENTS\e[0m
 \t-p --port <port>	Specify the port that is secured by SSL, uses 443 if not specified
 \t-n --name <hostname>	Specify a specific domain name to receive from the host
-\t--protocol		Specify a protocol to use in the connection (smtp, pop3, imap, ftp, xmpp)
+\t--protocol <protocol>	Specify a protocol to use in the connection (smtp, pop3, imap, ftp, xmpp)
 \t--nosni			Retrieves the SSL certificate without specifying a servername
 \t--san			Get Subject Alternative Name for certificate
+\t--format		Specify the encoding on a certificate from standard input (DER, NET)
 \t--force			Bypass script's ping check on the host
 \t--help			Show this help menu as well as exit codes
 
 \e[97mSTANDARD INPUT\e[0m
-	bash < cert.pem
-	cat cert.pem | bash";
+	bash < cert
+	cat cert | bash";
 
 	test $1 == '0' && echo -e "
 \e[97mEXIT CODES\e[0m
@@ -306,7 +285,7 @@ CompatibilityCheck()
 # Return: None
 function HandleArgs()
 {
-	while [[ $# -gt 0 ]]
+	while [[ $# -gt '0' ]]
 	do
 		case $1 in
 			-h|--host)
@@ -354,6 +333,14 @@ function HandleArgs()
 				SAN='1';
 				shift;
 				;;
+			--format)
+				if [[ $2 && $(echo $2 | cut -c'1') != '-' ]] && \
+				[[ $2 == 'DER' || $2 == 'NET' ]]; then
+					# Used with x509 -inform.
+					FORMAT=$2;
+				fi
+				shift;
+				;;
 			--help)
 				ShowHelp '0';
 				exit;
@@ -375,7 +362,7 @@ function HandleArgs()
 # Pass standard input to SClient_ErrorParse() and SClient_X509()
 # 
 # Parameters
-# $1 - $(cat /dev/stdin)
+# $1 - PEM/DER/NET certificate
 #
 # Return
 # 0 - Success
@@ -384,18 +371,23 @@ function ParseStdin()
 {
 	local stdin_x509=$(echo "$1" | openssl x509 2>&1);
 	local exitcode=$(SClient_ErrorParse "$stdin_x509" > /dev/null; echo $?);
-	test "$exitcode" == '0' && SClient_X509 "$stdin_x509" "1" && exit 0;
-	test "$exitcode" != '0' && echo 'Unable to interpret value from stdin. (error 7)' && exit 7;
+	test "$exitcode" == '0' && SClient_X509 "$stdin_x509" '1' && exit 0;
+	test "$exitcode" != '0' && echo -e 'Unable to interpret value from stdin. (error 7)\nVerify the certificate you are using is valid.' && exit 7;
 }
 
 # Script pre-checks              #
 # Check for script compatibility #
 # Pass arguments to script       #
-# Check for input on script      #
 CompatibilityCheck;
 HandleArgs "$@";
-[[ ! -t 0 && -t 1 ]] && ParseStdin "$(cat /dev/stdin)";
-#                                #
+[[ -z $NAME && $HOSTISIP == '0' ]] && NAME=$HOST;
+
+# Standard input needs to be held outside of a function in order to directly parse /dev/stdin
+# Storing the input of a DER or NET file into a variable makes it unusable with openssl
+if [[ ! -t 0 && -t 1 ]]; then
+	[[ -n $FORMAT ]] && ParseStdin "$(openssl x509 -inform $FORMAT -in /dev/stdin 2> /dev/null)";
+	ParseStdin "$(cat /dev/stdin)";
+fi
 
 # Script pre-check scompleted               #
 # Proceed with default script functionality #

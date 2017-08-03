@@ -147,3 +147,14 @@ _ Empty certificate common name will now return 'None' if there are no results. 
 ~ Using an IP address as the host now requires -n or --name in order to supply -servername to the host. IP address hosts will by default no longer use SNI.
 _ Fixed error that would occur if common name had a space in it. This could occur in instances where the common name is not a domain name.
 _ Added error parsing for s_client errors originating from write:errno=. The error code I got specifically was 104 which apparently indicates connection reset (ECONNRESET). It'll just use a generic error for now.
+
+----------------------------
+-- 0.92   August 03 2017  --
+----------------------------
++ Support for DER & NET encoded x509 certificates.
+~ CodeToBool() considers exit codes greater than 0 false rather than just exit code 1.
+~ Renamed SClient_GetSAN() to X509_GetSAN().
+~ SClient_GetSAN() is now called regardless of whether or not --san is specified. --san is now used explicitly to retrieve the full list of SAN fields.
+~ SClientConnect() and SClientConnect_SNI() merged into one function.
+~ General code & comment cleanup.
+_ Fixed the use of an incorrect protocol with the wrong port. This would occur when coreutil timeout cuts off the error needed to parse the issue.
