@@ -17,13 +17,15 @@ FORCE='0';		# --force
 
 # Script Options
 TIMEOUT='10';
-VERSION='0.92';
-VERSIONDATE='August 03, 2017';
+VERSION='0.94';
+VERSIONDATE='August 20, 2017';
 SNICOMP='1';
 TIMEOUTCOMP='1';
 HOSTISIP='0';
 
-
+##########################
+###### Miscellaneous #####
+##########################
 # CodeToBool()
 # Translate exit code into boolean with color
 #
@@ -63,141 +65,6 @@ function CheckExpired()
 	
 	test $curdatenix -ge $expdatenix;
 	return $?;
-}
-
-# X509_GetSAN()
-# Output Subject Alternative Name
-#
-# Parameters
-# $1 - OpenSSL base output
-#
-# Return: None
-function X509_GetSAN()
-{
-	local base=$(echo "$1" | openssl x509 -noout -text | grep 'DNS:');
-	local sancount=$(echo "$base" | grep -o 'DNS:' | wc -l);
-	local san;
-	
-	for (( i = 1; i <= $sancount; i++ ))
-	do
-		san+=" $(echo $base | cut -d',' -f${i} | cut -d':' -f2)";
-		test $i == $sancount || san+='\n';
-	done
-	
-	test -z "$san" && echo -e 'Subject Alternative Name: \e[31mNone\e[0m'&& return 0;
-	[[ -n $san && $SAN == '0' ]] && echo -e "Subject Alternative Name: $sancount Names" && return 0;
-	echo -e "Subject Alternative Name: $sancount Names\n$san" && return 0;
-}
-
-# X509_Revoked()
-# Retrieve revocation status of certificate using OCSP
-function X509_Revoked()
-{
-	local ocspurl=$(echo "$1" | openssl x509 -noout -ocsp_uri);
-	local crl=$(echo "$1" | openssl x509 -noout -text | awk '/CRL Distribution/,/URI/ { print $0 }' | awk -F'URI:' '/URI/ { print $2 }');
-	
-	#openssl s_client -status 2>&1 | grep -i 'ocsp'
-	
-	echo -e "Revoked: null\n OCSP URL: $ocspurl\n CRL: $crl";
-}
-
-# SClient_X509()
-# Converts output of s_client into neat text
-#
-# Parameters
-# $1 - s_client/x509 Input
-# $2 - stdin Boolean
-#
-# Return: None
-function SClient_X509()
-{
-	local cn=$(echo "$1" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}' | awk -F'/.+=' '{print $1}');
-	local san=$(X509_GetSAN "$1");
-	local issuer=$(echo "$1" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}');
-	local startdate=$(date -d "$(echo "$1" | openssl x509 -noout -startdate | cut -d'=' -f2)" +'%b %d %G %r %Z');
-	local enddate=$(date -d "$(echo "$1" | openssl x509 -noout -enddate | cut -d'=' -f2)" +'%b %d %G %r %Z');
-	local expired=$(CheckExpired "$enddate"; echo $?);
-	local fingerprint=$(echo "$1" | openssl x509 -noout -fingerprint | cut -d'=' -f2);
-	
-	test "$2" == '0' && echo -e "\e[2m${HOST}:${PORT}$([[ $SNICOMP == '1' && $NOSNI != '1' && -n $NAME ]] && printf " ($NAME)"; test $HOSTISIP == '0' && echo " - $(dig $HOST +short | head -1)")\e[0m";
-	#test $2 == '0' && echo -e "\e[2m${HOST}:${PORT}$()\e[0m";
-	[[ -z $cn ]] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $cn";
-	echo -e "$san";
-	[[ -z $issuer ]] && echo -e "Organization: \e[31mSelf-signed\e[0m" || echo "Organization: $issuer";
-	echo -e "Expired: $(CodeToBool $expired 1)\n Start: $startdate\n End: $enddate";
-	echo "Fingerprint: $fingerprint";
-}
-
-# SClient_ErrorParse()
-# Checks the s_client connection for errors
-#
-# Parameters
-# $1 - s_client/x509 Input
-#
-# Return
-# 0 - No errors found
-# 1 - Connection failed for unknown reason
-# 2 - Connection was refused
-# 3 - Connection timed out
-# 4 - Connection received unknown protocol
-function SClient_ErrorParse()
-{
-	# Check to see if the connection timed out when using timeout, and if so, exit.
-	[[ $TIMEOUTCOMP == '1' && -z $1 ]] && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
-	
-	# Error catching for specific errors. If no error is found, function returns 0 and proceeds with the script.
-	if [[ $(echo "$1" | grep -E ":errno=|:error:|didn't found starttls") ]]; then
-		test "$(echo "$1" | grep 'socket: Connection refused')" && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
-		test "$(echo "$1" | grep 'socket: Connection timed out')" && echo "Connection to $HOST:$PORT was refused! (error 2)" && return 2;
-		test "$(echo "$1" | grep 'SSL23_GET_SERVER_HELLO:unknown protocol')" && \
-			echo "Unknown protocol received from $HOST:$PORT! (error 4)\nTry specifying a protocol using --protocol." && return 4;
-		
-		echo "Unknown error encountered when connecting to $HOST:$PORT! (error 1)" && return 1; # Generic error
-	fi
-}
-
-# SClientConnect()
-# Establishes s_client connection to host and port
-#
-# Parameters
-# $1 - Host
-# $2 - Port
-# $3 - Name
-#
-# Return
-# See SClient_ErrorParse()
-function SClientConnect()
-{
-	# Store output of s_client into variable.
-	local connectionstr=$(echo |$(test $TIMEOUTCOMP == '1' && echo " timeout $TIMEOUT") openssl s_client -connect "${1}:${2}"$([[ -n $PROTOCOL ]] && echo " -starttls $PROTOCOL")$([[ -n $3 ]] && echo " -servername $3") -showcerts 2>&1);
-	
-	# If there's an error, return the error code from SClient_ErrorParse().
-	SClient_ErrorParse "$connectionstr" || return $?;
-	
-	# No error, return the s_client output.
-	echo "$connectionstr";
-}
-
-# Main()
-# Establishes s_client connections and parses it
-#
-# Parameters: None
-#
-# Return: None
-function Main()
-{
-	sclient=$(SClientConnect $HOST $PORT) || local sclient_exitcode=$?;
-	test $SNICOMP == '1' && sclient_sni=$(SClientConnect $HOST $PORT $NAME) || sclient_sni_exitcode=$?;
-	
-	# SNI Connection
-	if [[ $SNICOMP == '1' && $NOSNI != '1' ]] && [[ $HOSTISIP != '1' ]] || [[ $HOSTISIP == '1' && -n $NAME ]]; then
-		test $sclient_sni_exitcode && echo -e "$sclient_sni" && return $sclient_sni_exitcode;
-		SClient_X509 "$sclient_sni" '0' && return 0;
-	fi
-	
-	# No SNI
-	test $sclient_exitcode && echo -e "$sclient" && return $sclient_exitcode;
-	SClient_X509 "$sclient" '0';
 }
 
 # ShowHelp()
@@ -254,7 +121,7 @@ function ShowHelp()
 # Parameters: None
 #
 # Return: None
-CompatibilityCheck()
+function CompatibilityCheck()
 {
 	local opensslver=$(openssl version | awk '{print $2}' | cut -d'-' -f1);
 	
@@ -359,7 +226,7 @@ function HandleArgs()
 }
 
 # ParseStdin()
-# Pass standard input to SClient_ErrorParse() and SClient_X509()
+# Pass standard input to SClient_ErrorParse() and X509_DisplayInfo()
 # 
 # Parameters
 # $1 - PEM/DER/NET certificate
@@ -371,8 +238,175 @@ function ParseStdin()
 {
 	local stdin_x509=$(echo "$1" | openssl x509 2>&1);
 	local exitcode=$(SClient_ErrorParse "$stdin_x509" > /dev/null; echo $?);
-	test "$exitcode" == '0' && SClient_X509 "$stdin_x509" '1' && exit 0;
+	test "$exitcode" == '0' && X509_DisplayInfo "$stdin_x509" '1' && exit 0;
 	test "$exitcode" != '0' && echo -e 'Unable to interpret value from stdin. (error 7)\nVerify the certificate you are using is valid.' && exit 7;
+}
+##########################
+
+##########################
+###### X509 Parsing ######
+##########################
+# All functions accept s_client/x509 output as $1
+#
+function X509_Cert() { echo "$1" | openssl x509; }
+function X509_CommonName() { echo "$1" | openssl x509 -noout -subject | awk -F'CN=' '{print $2}' | awk -F'/.+=' '{print $1}'; }
+function X509_Issuer() { echo "$1" | openssl x509 -noout -issuer | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return $?; }
+function X509_StartDate() { echo "$1" | openssl x509 -noout -startdate | cut -d'=' -f2; }
+function X509_Organization() { echo "$1" | openssl x509 -noout -subject | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return $?; }
+function X509_EndDate() { echo "$1" | openssl x509 -noout -enddate | cut -d'=' -f2; }
+function X509_Fingerprint() { echo "$1" | openssl x509 -noout -fingerprint | cut -d'=' -f2; }
+function X509_IsEV() { echo "$1" | openssl x509 -noout -subject | grep '/serialNumber=' > /dev/null; return $?; }
+function X509_Chain()
+{
+	local basecert=$(X509_Cert "$1");
+	local fullchain=$(echo "$1" | awk '/-----BEGIN/,/-----END/');
+	
+	[[ "$basecert" == "$fullchain" ]] && return 0;
+	
+	echo "$1" | awk -v certidx=-1 '
+	/-----BEGIN CERTIFICATE-----/ {inc=1; certidx++}
+	inc {if (certidx > 0) print}
+	/-----END CERTIFICATE-----/ {inc=0}
+	';
+}
+function X509_SubjectAltName()
+{
+	local sanlist;
+	
+	for name in $(echo "$1" | openssl x509 -noout -text | grep 'DNS:');
+	do
+		sanlist+="$(echo $name | cut -d':' -f2 | cut -d',' -f1)\n";
+	done
+	
+	echo -e $sanlist;
+}
+function X509_Revoked()
+{
+	# Get main certificate and certificate chain. If certificate chain is empty, exit the function.
+	local maincert=$(X509_Cert "$1");
+	local certchain=$(X509_Chain "$1");
+	[[ -z $certchain ]] && return 2;
+	
+	# Get OCSP URL. If it does not exist, exit the function.
+	local ocspurl=$(echo "$1" | openssl x509 -noout -ocsp_uri);
+	[[ -z $ocspurl ]] && return 2;
+	
+	local ocspresponse=$(openssl ocsp -issuer <(echo "$certchain") -cert <(echo "$maincert") -url $ocspurl -text -header "Host" "$(echo $ocspurl | awk -F'://' '{print $2}')" 2>&1);
+	
+	echo "$ocspresponse" | grep -i 'OCSP Response Status: successful' > /dev/null || return 2;
+	echo "$ocspresponse" | grep -i 'Cert Status: revoked' > /dev/null && return 0 || return 1;
+}
+
+# X509_DisplayInfo()
+# Converts output of s_client or x509 into neat text
+#
+# Parameters
+# $1 - s_client/x509 Input
+# $2 - stdin Boolean
+#
+# Return: None
+function X509_DisplayInfo()
+{
+	local commonname=$(X509_CommonName "$1");
+	local altnames=$(X509_SubjectAltName "$1");
+	local issuer=$(X509_Issuer "$1");
+	local organization=$(X509_Organization "$1");
+	local startdate=$(date -d "$(X509_StartDate "$1")" +'%b %d %G %r %Z');
+	local enddate=$(date -d "$(X509_EndDate "$1")" +'%b %d %G %r %Z');
+	[[ $2 == '0' && -n $issuer ]] && local revoked=$(X509_Revoked "$1"; echo $?);
+	local fingerprint=$(X509_Fingerprint "$1");
+	
+	test $2 == '0' && \
+		printf "\e[2m%s:%s%s\e[0m\n" $HOST $PORT "$(
+		[[ $SNICOMP == '1' && $NOSNI != '1' && -n $NAME ]] && printf " (%s)" $NAME;
+		test $HOSTISIP == '0' && echo " - $(dig $HOST +short | head -1)"
+		)";
+	
+	[[ -z $commonname ]] && echo -e 'Common Name: \e[31mNone\e[0m' || echo "Common Name: $commonname";
+	echo -e "Subject Alternative Name(s):$([[ $SAN == '1' && -n $altnames ]] && echo "$altnames" | sed 's/^/ /' || echo " $([[ -n $altnames ]] && echo "$altnames" | wc -l || echo '0') Name(s)")";
+	[[ -z $issuer ]] && echo -e "Issuer: \e[31mSelf-signed\e[0m" || echo "Issuer: $issuer";
+	echo "Expired: $(CodeToBool $(CheckExpired "$enddate"; echo $?) 1)
+ Start: $startdate
+ End: ${enddate}";
+	[[ $revoked && $revoked != '2' ]] && echo "Revoked: $(CodeToBool $revoked 1)";
+	[[ $(X509_IsEV "$1"; echo $?) == '0' && -n $organization ]] && echo -e "Extended Validation: \e[32mTrue\e[0m\n Organization: $organization";
+	echo "Fingerprint: $fingerprint";
+}
+
+##############################
+###### s_client Parsing ######
+##############################
+# SClient_ErrorParse()
+# Checks the s_client connection for errors
+#
+# Parameters
+# $1 - s_client/x509 Input
+#
+# Return
+# 0 - No errors found
+# 1 - Connection failed for unknown reason
+# 2 - Connection was refused
+# 3 - Connection timed out
+# 4 - Connection received unknown protocol
+function SClient_ErrorParse()
+{
+	# Check to see if the connection timed out when using timeout, and if so, exit.
+	[[ $TIMEOUTCOMP == '1' && -z $1 ]] && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
+	
+	# Error catching for specific errors. If no error is found, function returns 0 and proceeds with the script.
+	if [[ $(echo "$1" | grep -E ":errno=|:error:|didn't found starttls") ]]; then
+		test "$(echo "$1" | grep 'socket: Connection refused')" && echo "Connection to $HOST:$PORT timed out! (error 3)" && return 3;
+		test "$(echo "$1" | grep 'socket: Connection timed out')" && echo "Connection to $HOST:$PORT was refused! (error 2)" && return 2;
+		test "$(echo "$1" | grep 'SSL23_GET_SERVER_HELLO:unknown protocol')" && \
+			echo "Unknown protocol received from $HOST:$PORT! (error 4)\nTry specifying a protocol using --protocol." && return 4;
+		
+		echo "Unknown error encountered when connecting to $HOST:$PORT! (error 1)" && return 1; # Generic error
+	fi
+}
+
+# SClient_Connect()
+# Establishes s_client connection to host and port
+#
+# Parameters
+# $1 - Host
+# $2 - Port
+# $3 - Name
+#
+# Return
+# See SClient_ErrorParse()
+function SClient_Connect()
+{
+	# Store output of s_client into variable.
+	local connectionstr=$(echo |$(test $TIMEOUTCOMP == '1' && echo " timeout $TIMEOUT") openssl s_client -connect "${1}:${2}"$([[ -n $PROTOCOL ]] && echo " -starttls $PROTOCOL")$([[ -n $3 ]] && echo " -servername $3") -showcerts 2>&1);
+	
+	# If there's an error, return the error code from SClient_ErrorParse().
+	SClient_ErrorParse "$connectionstr" || return $?;
+	
+	# No error, return the s_client output.
+	echo "$connectionstr";
+}
+##############################
+
+# Main()
+# Establishes s_client connections and parses it
+#
+# Parameters: None
+#
+# Return: None
+function Main()
+{
+	sclient=$(SClient_Connect $HOST $PORT) || local sclient_exitcode=$?;
+	test $SNICOMP == '1' && sclient_sni=$(SClient_Connect $HOST $PORT $NAME) || sclient_sni_exitcode=$?;
+	
+	# SNI Connection
+	if [[ $SNICOMP == '1' && $NOSNI != '1' ]] && [[ $HOSTISIP != '1' ]] || [[ $HOSTISIP == '1' && -n $NAME ]]; then
+		test $sclient_sni_exitcode && echo -e "$sclient_sni" && return $sclient_sni_exitcode;
+		X509_DisplayInfo "$sclient_sni" '0' && return 0;
+	fi
+	
+	# No SNI
+	test $sclient_exitcode && echo -e "$sclient" && return $sclient_exitcode;
+	X509_DisplayInfo "$sclient" '0';
 }
 
 # Script pre-checks              #

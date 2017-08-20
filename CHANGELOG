@@ -158,3 +158,10 @@ _ Added error parsing for s_client errors originating from write:errno=. The err
 ~ SClientConnect() and SClientConnect_SNI() merged into one function.
 ~ General code & comment cleanup.
 _ Fixed the use of an incorrect protocol with the wrong port. This would occur when coreutil timeout cuts off the error needed to parse the issue.
+
+----------------------------
+-- 0.93   August 16 2017  --
+----------------------------
++ Added basic extended validation test to the script.
++ Added revocation test using OCSP.
+~ A lot of code has been optimized/restructured.
