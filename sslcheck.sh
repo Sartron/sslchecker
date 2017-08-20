@@ -17,7 +17,7 @@ FORCE='0';		# --force
 
 # Script Options
 TIMEOUT='10';
-VERSION='0.94';
+VERSION='0.93';
 VERSIONDATE='August 20, 2017';
 SNICOMP='1';
 TIMEOUTCOMP='1';
