@@ -165,3 +165,10 @@ _ Fixed the use of an incorrect protocol with the wrong port. This would occur w
 + Added basic extended validation test to the script.
 + Added revocation test using OCSP.
 ~ A lot of code has been optimized/restructured.
+
+------------------------------
+-- 0.93   September 3 2017  --
+------------------------------
++ Added --timeout option to allow modification of s_client timeout. Requires coreutils.
+~ s_client connections are only made if needed. This should help when optimizing total duration of the script.
+~ General visual changes made to code.
