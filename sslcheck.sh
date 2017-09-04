@@ -447,8 +447,7 @@ if [ -n "${HOST}" ]; then
 	fi
 	
 	Main;
-	echo ${SECONDS};
-	#exit ${?};
+	exit ${?};
 else
 	ShowHelp '1';
 	exit 6;
