@@ -14,7 +14,6 @@ PROTOCOL='';		# --protocol
 USESNI='1';			# --nosni
 SAN='0';			# --san
 FORMAT='PEM';		# --format
-FORCE='0';			# --force
 TIMEOUT='10';		# --timeout
 
 # General Variables
@@ -23,7 +22,7 @@ TIMEOUTCOMP='1';	# Has coreutil timeout
 HOSTISIP='0';		# Supplied host is IP
 
 # Miscellaneous Variables
-readonly VERSION='1.00';
+readonly VERSION='1.01';
 readonly VERSIONDATE='November 30 2017';
 
 # CheckExpired()
@@ -165,11 +164,6 @@ function ParseArgs()
 				fi
 				shift;
 				;;
-			--force)
-				# Used to bypass the ping check.
-				[ ${FORCE} != '1' ] && FORCE='1';
-				shift;
-				;;
 			--timeout)
 				if ParseArgs_IsValid "${2}" && [[ ${2} =~ ^[0-9]+$ ]]; then
 					# Modify script's timeout period.
@@ -307,7 +301,6 @@ function ShowHelp()
 \t--san			Get Subject Alternative Name for certificate
 
 \e[97mOTHER OPTIONS\e[0m
-\t--force			Bypass script's ping check on the host
 \t--timeout		Define timeout for the s_client connection
 \t--help			Show this help menu as well as exit codes
 

@@ -183,4 +183,8 @@ _ Fixed the use of an incorrect protocol with the wrong port. This would occur w
  ~ Replaced a lot of 'echo $var | parser' type lines and instead opted to use here strings.
  ~ Standard input functionality rewritten to be much simpler. openssl x509 -in is always used now rather than cat /dev/stdin | openssl x509.
  ~ Smartened up SNI logic by renaming variable $NOSNI to $USESNI. By default, $USESNI is set to 1. If $SNICOMP is set to 0 or --nosni is specified, then so is $USESNI.
- 
+
+------------------------------
+-- 1.01   November 30 2017  --
+------------------------------
+- Removed --force in favor of just using the already existing error handling in SClient_ErrorParse().
