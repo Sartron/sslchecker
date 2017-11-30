@@ -167,8 +167,20 @@ _ Fixed the use of an incorrect protocol with the wrong port. This would occur w
 ~ A lot of code has been optimized/restructured.
 
 ------------------------------
--- 0.93   September 3 2017  --
+-- 0.94   September 3 2017  --
 ------------------------------
 + Added --timeout option to allow modification of s_client timeout. Requires coreutils.
 ~ s_client connections are only made if needed. This should help when optimizing total duration of the script.
 ~ General visual changes made to code.
+
+------------------------------
+-- 1.00   November 30 2017  --
+------------------------------
++ Added function ParseArgs_IsValid() to verify passed arguments rather than repeatedly writing the same if statement clause.
++ Script checks if the openssl binary can be found, and exits if not.
+~ Massive rewrite and organization of code. Again.
+ ~ Condensed majority of code to be executed from function Main() rather than exist outside of it.
+ ~ Replaced a lot of 'echo $var | parser' type lines and instead opted to use here strings.
+ ~ Standard input functionality rewritten to be much simpler. openssl x509 -in is always used now rather than cat /dev/stdin | openssl x509.
+ ~ Smartened up SNI logic by renaming variable $NOSNI to $USESNI. By default, $USESNI is set to 1. If $SNICOMP is set to 0 or --nosni is specified, then so is $USESNI.
+ 
