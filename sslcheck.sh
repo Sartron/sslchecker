@@ -22,8 +22,8 @@ TIMEOUTCOMP='1';	# Has coreutil timeout
 HOSTISIP='0';		# Supplied host is IP
 
 # Miscellaneous Variables
-readonly VERSION='1.01';
-readonly VERSIONDATE='November 30 2017';
+readonly VERSION='1.02';
+readonly VERSIONDATE='December 03 2017';
 
 # CheckExpired()
 # Checks if SSL certificate is expired
@@ -334,9 +334,9 @@ function X509_Cert() { openssl x509 <<< "${1}"; }
 function X509_CommonName() { openssl x509 -noout -subject <<< "${1}" | awk -F'CN=' '{print $2}' | awk -F'/.+=' '{print $1}'; }
 function X509_EndDate() { openssl x509 -noout -enddate <<< "${1}" | cut -d'=' -f2; }
 function X509_Fingerprint() { openssl x509 -noout -fingerprint <<< "${1}" | cut -d'=' -f2; }
-function X509_IsEV() { openssl x509 -noout -subject <<< "${1}" | grep '/serialNumber=' > /dev/null; return $?; }
-function X509_Issuer() { openssl x509 -noout -issuer <<< "${1}" | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return $?; }
-function X509_Organization() { openssl x509 -noout -subject <<< "${1}" | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return $?; }
+function X509_IsEV() { openssl x509 -noout -subject <<< "${1}" | grep '/serialNumber=' > /dev/null; return ${?}; }
+function X509_Issuer() { openssl x509 -noout -issuer <<< "${1}" | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return ${?}; }
+function X509_Organization() { openssl x509 -noout -subject <<< "${1}" | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return ${?}; }
 function X509_StartDate() { openssl x509 -noout -startdate <<< "${1}" | cut -d'=' -f2; }
 function X509_Chain()
 {
@@ -350,7 +350,7 @@ function X509_Chain()
 	/-----BEGIN CERTIFICATE-----/ {inc=1; certidx++}
 	inc {if (certidx > 0) print}
 	/-----END CERTIFICATE-----/ {inc=0}
-	';
+	' <<< "${1}";
 }
 function X509_SubjectAltName()
 {
@@ -358,7 +358,7 @@ function X509_SubjectAltName()
 	
 	for name in $(openssl x509 -noout -text <<< "${1}" | grep 'DNS:');
 	do
-		sanlist+="$(echo $name | cut -d':' -f2 | cut -d',' -f1)\n";
+		sanlist+="$(cut -d':' -f2 <<< "${name}" | cut -d',' -f1)\n";
 	done
 	
 	echo -e ${sanlist};
@@ -374,7 +374,7 @@ function X509_Revoked()
 	local ocspurl=$(openssl x509 -noout -ocsp_uri <<< "${1}");
 	[[ -z ${ocspurl} ]] && return 2;
 	
-	local ocspresponse=$(openssl ocsp -issuer <(echo "${certchain}") -cert <(echo "${maincert}") -url ${ocspurl} -text -header "Host" "$(echo ${ocspurl} | awk -F'://' '{print $2}')" 2>&1);
+	local ocspresponse=$(openssl ocsp -issuer <(echo "${certchain}") -cert <(echo "${maincert}") -url ${ocspurl} -text -header "Host" "$(awk -F'://' '{print $2}' <<< "${ocspurl}")" 2>&1);
 	
 	grep -i 'OCSP Response Status: successful' <<< "${ocspresponse}" > /dev/null || return 2;
 	grep -i 'Cert Status: revoked' <<< "${ocspresponse}" > /dev/null && return 0 || return 1;
@@ -419,7 +419,7 @@ function X509_DisplayInfo()
 function Main()
 {
 	# Check to see if the script is compatible.
-	CompatibilityCheck || { echo 'OpenSSL not found in $PATH variable.'; return 1; };
+	CompatibilityCheck || { echo 'OpenSSL not found in $PATH variable.'; return 6; };
 	
 	# Load all passed arguments to the script first.
 	ParseArgs "${@}" || return 0;

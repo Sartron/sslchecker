@@ -188,3 +188,9 @@ _ Fixed the use of an incorrect protocol with the wrong port. This would occur w
 -- 1.01   November 30 2017  --
 ------------------------------
 - Removed --force in favor of just using the already existing error handling in SClient_ErrorParse().
+
+------------------------------
+-- 1.02   December 03 2017  --
+------------------------------
+~ Missed a couple 'echo $var | program' statements. Converted them to use a here string.
+_ Exit code for script incompatibility was set to 1 which is inaccurate. Gave it exit code 6.
