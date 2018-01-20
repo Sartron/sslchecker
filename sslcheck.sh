@@ -22,8 +22,8 @@ TIMEOUTCOMP='1';	# Has coreutil timeout
 HOSTISIP='0';		# Supplied host is IP
 
 # Miscellaneous Variables
-readonly VERSION='1.02';
-readonly VERSIONDATE='December 03 2017';
+readonly VERSION='1.03';
+readonly VERSIONDATE='January 20 2018';
 
 # CheckExpired()
 # Checks if SSL certificate is expired
@@ -338,6 +338,7 @@ function X509_IsEV() { openssl x509 -noout -subject <<< "${1}" | grep '/serialNu
 function X509_Issuer() { openssl x509 -noout -issuer <<< "${1}" | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return ${?}; }
 function X509_Organization() { openssl x509 -noout -subject <<< "${1}" | awk -F'O=' '{print $2}' | awk -F'/.+=' '{print $1}'; return ${?}; }
 function X509_StartDate() { openssl x509 -noout -startdate <<< "${1}" | cut -d'=' -f2; }
+function X509_SubjectAltName() { openssl x509 -noout -text <<< "${1}" | grep -oP '(?<=DNS:)[a-z0-9.-]+'; }
 function X509_Chain()
 {
 	local basecert=$(X509_Cert "${1}");
@@ -346,22 +347,11 @@ function X509_Chain()
 	# If the chain is just the base certificate, then exit function.
 	[[ "${basecert}" == "${fullchain}" ]] && return 0;
 	
-	echo "${1}" | awk -v certidx=-1 '
+	awk -v certidx=-1 '
 	/-----BEGIN CERTIFICATE-----/ {inc=1; certidx++}
 	inc {if (certidx > 0) print}
 	/-----END CERTIFICATE-----/ {inc=0}
 	' <<< "${1}";
-}
-function X509_SubjectAltName()
-{
-	local sanlist;
-	
-	for name in $(openssl x509 -noout -text <<< "${1}" | grep 'DNS:');
-	do
-		sanlist+="$(cut -d':' -f2 <<< "${name}" | cut -d',' -f1)\n";
-	done
-	
-	echo -e ${sanlist};
 }
 function X509_Revoked()
 {

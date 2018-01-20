@@ -194,3 +194,9 @@ _ Fixed the use of an incorrect protocol with the wrong port. This would occur w
 ------------------------------
 ~ Missed a couple 'echo $var | program' statements. Converted them to use a here string.
 _ Exit code for script incompatibility was set to 1 which is inaccurate. Gave it exit code 6.
+
+-----------------------------
+-- 1.03   January 20 2018  --
+-----------------------------
+~ Minor code tweaks.
+~ Redid X509_SubjectAltName() to use a one-line Perl grep statement.
